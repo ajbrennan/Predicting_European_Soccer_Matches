@@ -1,0 +1,779 @@
+---
+title: "352-Project-Report-Anthony-Brennan"
+author: "Anthony Brennan"
+date: "12/16/2019"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+---
+
+# Title
+
+Predicting Soccer Game Outcomes Using FIFA Player Ratings
+
+# Author
+
+Anthony Brennan
+
+Undergraduate student at Case Western Reserve University
+
+# License
+
+CC-BY-SA 4.0
+
+# Abstract
+
+  Sports analytics has boomed in recent years with the explosion in available data to data. One of the biggest analytic interests is predicting the results of games. Soccer, the world's most popular sport, is full of data for this kind of analysis. This report will look into predicting various game outcomes for European soccer games using player rating data from EA Sport's FIFA video game series. The expected goal differential and total goals scored will be modeled using multiple linear regression and support vector machines. Win probabilities will be predicted using t-stat and poisson distributions. Finally, projected final standings will be created using these models. The goal for this report is to use these modelling methods to create reliable models for creating these outcomes. All of these game outcome predicitons are important to all kinds of people from front office executives to coaches to sports bettors. Given how much money is tied up into soccer, it is important for everyone involved to have the most accurate analytic information.
+
+# Question
+
+Can I predict an expected goals scored, goal differential, and win probabilities for various European soccer matches using player data from FIFA video games?
+
+
+# Introduction
+
+  When I was thinking about ideas for my project I wanted to do it on sports data. There has been a large boom in the use of data analytics in the sports industry, which is what got me interested in data science in the first place. After finding some data sets on Kaggle, I decided to focus on predicting soccer match outcomes using soccer player data. I felt using soccer would be best (compared to baseball, football, etc) because there are many different major leagues, whereas most of the other sports essentially only have one major league with extensive data. Since soccer has so many leagues and teams, there is far more data and a much larger sample size. 
+
+  For player data, I will be using player ratings from EA Sport's FIFA video games. While the ratings are somewhat subjective, they do a pretty decent job at assessing players talent level. They are also a simpler, more standardized way to compare talent on different teams, rather than having to create my own subjective rating system with the data I have available to me. I found a data set on Kaggle with match results from 2000-2019 across 30+ European leagues. I also found data sets with player ratings for the FIFA 17, FIFA 18, and FIFA 19 on Kaggle. These data sets represent the preseason ratings for the 2016-17, 2017-18, and 2018-19 seasons, respectively. There are no mid-season adjustments in the data sets (EA will sometimes update ratings throughout the season).
+
+  In the project I matched up the player rankings from the video games to their respective seasons to avoid adding bias to the models. With each new season, players have their ratings adjusted and some players will change teams or retire. So it is important to make sure that the team rosters I use have the same real life rosters. So all games during the 2016-2017 season will have player data from the FIFA 17 video game, 2017-2018 will be from Fifa 18, and 2018-2019 will be from Fifa 19. As a result I will only be looking at games from these three seasons and will not use match data from any other season.
+
+  The ultimate goal of this project is to look at predicting a few different types of outcomes. The first is to come up with a prediction for how many goals each team would score and the goal differential for every game. Goal differential is the difference between the amount of goals the home team scores minus the amount of goals the away team scores. The next thing I want to predict is the probabilities of each team winning plus the probability that the game ends in a draw. Finally I want to come up with a prediction for the final standings for each league. These predictions can be important for many reasons. It could help a club's front office determine how much extra value a new player would bring to a club, and whether its worth it to sign him. Win probabilities can help managers make strategic decisions on what games to rest players. Goal differential and win probabilities are also important in the European sports betting industry as many bets revolve around these metrics.
+
+# Data Science Methods
+
+```{r,echo=FALSE}
+#Packages
+suppressMessages(library(dplyr))
+library(ggplot2)
+library(jtools)
+library(leaps)
+library(e1071)
+#Datasets
+fifa17 <- read.csv("./FullData_2017.csv")
+fifa18 <- read.csv("./fifa-18-demo-player-dataset/CompleteDataset.csv")
+fifa19 <- read.csv("./data_2019.csv")
+matches <- read.csv("./match_results.csv")
+all <- read.csv("./all.csv")
+games <- read.csv("./games.csv")
+games <- rename(games, GameNum = "X.1")
+#str(fifa17)
+#str(fifa18)
+#str(fifa19)
+#str(matches)
+```
+
+  I had to go through a few steps to take the raw data from Kaggle and format it into a format I could use for the project. All of the data cleaning and formating is done in the Data_Cleaning.rmd file. All 3 fifa video game data sets ("./Datasets/FullData_2017.csv", ".Datasets/fifa-18-demo-player-dataset/CompleteDataset.csv", "./Datasets/data_2019.csv") were in csv format, so they were loaded into R easily using read.csv. The data set with all of the match data, however, was in a SQLite file ("./Datasets/database.sqlite"). In order to load this file, I used the RSQLite package to pull the files from the database and then save the file I needed, which was the second data set. 
+
+  Since the soccer leagues in the Fifa games and match data are not the same, the next step was to filter for all the leagues that exist in all 4 data sets. This came out to a total of 17 european leagues in all of the data sets. These include: the top 4 tiers in England (Premier League, Championship, League 1, League 2); the top 2 tiers in Germany (Bundesliga 1, Bundesliga 2), France (Le Championnat, Division 2), Italy (Serie A, Serie B), and Spain (La Liga Primera Division, La Liga Segunda Division); and the top tier in Belgium (Jupiler League), Netherlands (Eredivisie), Portugal (Liga 1), Scotland (Premier League), and Turkey (Futbol Ligi 1). Using the dplyr package I removed all of the leagues that were not included in this list. I also created a conversion array in order to convert all of the special characters from other languages into simple English letters.
+
+  The next set of steps were applied to the Fifa 17, Fifa 18, and Fifa 19 data sets individually. I did these seperately as I am applying the Fifa data to its corresponding season to avoid bias. So Fifa 17 player data is applied to games during the 2016-2017 season, Fifa 18 to 2017-2018, and Fifa 19 to 2018-2019. Many of the teams in all of the data sets had slight variations in the names of the teams. For example, the name for one Portuguese team was listed as SP Gijon in matches, Sporting Gijon in Fifa 17, and Real Sporting de Gijon in Fifa 18 & 19. So I pulled all of the unique team names from both Fifa and matches, and manually matched up all of the team names in excel so that I could make sure all of the team names were correctly converted and reduce the amount of code it would've taken to convert 200+ teams. I then reloaded this new conversion data set converted all of the Fifa team names so that they were the same as the team names in the matches data. Finally, I removed all of the teams that weren't from the leagues I am analyzing.
+
+  After the team names were converted I needed to create a sample lineup of players for each team for each year. For each team I picked the best goalie (GK), the 2 best forwards (F1, F2), 4 best midfielders (M1, M2, M3, M4), 4 best defenders (D1, D2, D3, D4), and the best 7 remaining players for the bench (B1-B7). An example of these lineups can be seen below.
+```{r}
+str(all[,c(2:21)])
+```
+
+  In order to determine which players go in which position I looked at the preferred positions in each of the Fifa data sets. For the forward position, I used players whose preferred position is Striker (ST), Left Striker (LS), Right Striker (RS), Center Forward (CF), Left Forward (LF), Right Forward (RF), Left Wing (LW), Right Wing (RW), Center Attacking Midfield (CAM), Left Attacking Midfield (LAM), or Right Attacking Midfield (RAM). For the midfield position, I used players whose preferred position is Center Attacking Midfield (CAM), Left Attacking Midfield (LAM), Right Attacking Midfield (RAM), Center Midfield (CM), Left Midfield (LM), Right Midfield (RM), Left Center Midfield (LCM), Right Center Midfield (RCM), Center Defending Midfield (CDM), Left Defending Midfield (LDM), or Right Defending Midfield (RDM). For the defending position, I used players whose preferred position is Center Back (CB), Left Back (LB), Right Back (RB), Left Center Back (LCB), Right Center Back (RCB), Left Wing Back (LWB), or Right Wing Back (RWB).
+
+  I ran a for loop through each of teams in order to pull all of the players on that team. From there I ordered each player on the team in descending order based on their ranking. From there, I went through each player and put them in the unfilled position that matched their preferred position. For example, in Fifa 18 Lionel Messi is the best player on FC Barcelona with a rating of 93. Since his preferred position is RW he will be inserted at F1, as seen below. Luis Suarez, the second best player with a rating of 92, will be placed next. Since his preferred position is ST, he will be placed in F2 since F1 has already been filled. This process will continue for all players on the team. If a player's preferred position is filled on the lineup, then the loop will look at their secondary position, if listed. If positions are filled for that as well, then they will be placed on the next available bench position. For example, Rafinha is a player on Barcelona with a rating of 81. Since preferred position is RW but both F1 and F2 are full. His secondary position is RM but M1-M4 are full as well so he is placed at B6, the first open bench position. An example of the 2018 Barcelona team can be seen below
+```{r,echo=FALSE}
+Barc <- filter(all, Club == "Barcelona", year == 2018)
+Barc[,c(46,2,4:21)]
+```
+
+  After the lineups were set, I created variables for the aggregate overall and position ratings. For the overall rating I took the average of all 11 starting positions. The position aggregate rankings were calculated as follows: goalkeeper - goalie rating, attacking = average of F1 and F2, midfield = average of M1-M4, defense = average of D1-D4, and bench = average of B1-B7. These are the variables I will be using later in creating models. This can be seen below.
+```{r,echo=FALSE}
+Barc[,c(46,2,22:27)]
+```
+
+  Once these variables were created, the final bit of variables created were summary statistics on various things about the teams. For some of the visualizations I will explain later in the report I needed to create average rankings for each league and then average team ratings - the average league ratings. In 2018, Barcelona played in La Liga Primera Division, which had an average overall rating of 79.27 (LGmeanOvr). Barcelona had a rating of 86.45, so its overall rating minus the league overall is 7.18 (OvrvsMean), meaning it has a rating 7.18 higher than the league average. I did this only for overall, attacking, and defensive ratings.
+```{r,echo=FALSE}
+Barc[,c(46,2:3,28:33)]
+```
+
+  I then went into the games data set and used dplyr to find all of the games each team played by year. I then took the average goals the scored and the average goals they conceded in each game and then the difference between the 2. Like with the ratings I calculated the league average goals for, goals against, and goal differential and average team - the average league.
+```{r,echo=FALSE}
+Barc[,c(46,2:3,40:45)]
+```
+
+  The final step for data wrangling was to pair up the rating variables with the games data. This was done by merging the club in the all data set with the home team in the games set and creating the variables HomeOverall, HomeAttacking, etc. Then doing the same with the away team.
+
+# Exploratory Data Analysis
+
+  There were a few things I wanted to look at before I started modeling my data. The first was to look at some summary statistics for some of the main variables I would be using. I also included a ggplot histogram of the overall ratings as well to look at the shape of the data.
+```{r,echo=FALSE}
+variable <- c("Overall","Goalkeeper","Attacking","Midfield","Defense","Goals For","Goals Against","Goal Diff")
+min <- round(c(min(all$Overall),min(all$Goalkeeper),min(all$Attacking),min(all$Midfield),min(all$Defense),min(all$GF),min(all$GA),min(all$Diff)), digits = 2)
+first_quantile <- round(c(quantile(all$Overall,.25),quantile(all$Goalkeeper,.25),quantile(all$Attacking,.25),quantile(all$Midfield,.25),quantile(all$Defense,.25),quantile(all$GF,.25),quantile(all$GA,.25),quantile(all$Diff,.25)), digits = 2)
+median <- round(c(median(all$Overall),median(all$Goalkeeper),median(all$Attacking),median(all$Midfield),median(all$Defense),median(all$GF),median(all$GA),median(all$Diff)), digits = 2)
+mean <- round(c(mean(all$Overall),mean(all$Goalkeeper),mean(all$Attacking),mean(all$Midfield),mean(all$Defense),mean(all$GF),mean(all$GA),mean(all$Diff)), digits = 2)
+third_quantile <- round(c(quantile(all$Overall,.75),quantile(all$Goalkeeper,.75),quantile(all$Attacking,.75),quantile(all$Midfield,.75),quantile(all$Defense,.75),quantile(all$GF,.75),quantile(all$GA,.75),quantile(all$Diff,.75)), digits = 2)
+max <- round(c(max(all$Overall),max(all$Goalkeeper),max(all$Attacking),max(all$Midfield),max(all$Defense),max(all$GF),max(all$GA),max(all$Diff)), digits = 2)
+sd <- round(c(sd(all$Overall),sd(all$Goalkeeper),sd(all$Attacking),sd(all$Midfield),sd(all$Defense),sd(all$GF),sd(all$GA),sd(all$Diff)), digits = 2)
+x <- data.frame(variable,min,first_quantile,median,mean,third_quantile,max,sd)
+x
+```
+```{r}
+ggplot(all, aes(Overall)) + 
+  geom_histogram(aes(y=..density..), colour="black", fill="white")+
+  geom_density(alpha=.2, fill="#FF6666")
+```
+
+  Based on the histogram, the overall ratings for all of the teams is a mostly normal bell shaped distribution. There is a little bit of a skew to the right, this is mostly attributable to some of the European super clubs like FC Barcelona, Bayern Munich, Liverpool, etc, who are much better than many of the other teams. 
+
+  I also wanted to look at the trends in the data. After adjusting ratings for the average league rating, the first plot is the adjusted overall rating vs average goal differential.
+```{r}
+ggplot(all, aes(Diff, OvrvsMean, color = Overall)) +
+  geom_point() +
+  scale_color_gradient(low = "red", high = "green") +
+  xlab("Avg Season Goal Differential") +
+  ylab("Overall Rating - Avg League Rating") +
+  geom_smooth(method = "lm")
+```
+
+  There is a clear upward trend in the plot. This follows the logic that the better the team is compared to the league the more it can expect to win by.
+
+  The next plot is adjusted attacking vs average goals scored.
+```{r}
+ggplot(all, aes(GF, AttvsMean, color = Attacking)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "green") +
+  xlab("Avg Season Goals Scored") +
+  ylab("Attacking Rating - Avg League Attacking") +
+  geom_smooth(method = "lm")
+```
+
+  This upward trend follows the logic that the better the forwards are, the more goals the team will score.
+
+  The last plot is adjusted defense vs average goals conceded
+```{r}
+ggplot(all, aes(GA, DefvsMean, color = Defense)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "green") +
+  xlab("Avg Season Goals Conceded") +
+  ylab("Defense Rating - Avg League Defense") +
+  geom_smooth(method = "lm")
+```
+
+  This downward trend follows the logic that the better the defenders are, the less goals the team will concede.
+
+  All of this shows that the data meets some common statistical assumptions. It is mostly normal distribution, has a large sample size of 19,314, and the data is linear. 
+
+# Statistical Learning: Modeling & Prediction
+
+```{r,echo=FALSE}
+homeplot <- function(combo){
+  x <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  p <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  n <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  s <- c("0.0-0.1","0.1-0.2","0.2-0.3","0.3-0.4","0.4-0.5","0.5-0.6","0.6-0.7","0.7-0.8","0.8-0.9","0.9-1.0")
+  h <- data.frame(x,p,n,s)
+  for(i in c(1:10)){
+    h$x[i] <- .1*i-.05
+    temp <- filter(combo, HomeWin > .1*(i-1), HomeWin < .1*i)
+    h$p[i] <- nrow(filter(temp, FTR == "H")) / nrow(temp)
+    h$n[i] <- nrow(temp)
+  }
+  ggplot(h, aes(x=x, y=p, color="red")) +
+    geom_point(aes(size=n)) +
+    geom_text(aes(label=s,hjust=0, vjust=2)) +
+    geom_abline(intercept = 0, slope = 1) +
+    xlim(0, 1) +
+    ylim(0, 1) +
+    ggtitle("Predicted Home Win Probability Validation") +
+    xlab("Predicted Home Win Percentage") +
+    ylab("Actual Home Win Percentage")
+}
+awayplot <- function(combo){
+  x <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  p <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  n <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  s <- c("0.0-0.1","0.1-0.2","0.2-0.3","0.3-0.4","0.4-0.5","0.5-0.6","0.6-0.7","0.7-0.8","0.8-0.9","0.9-1.0")
+  a <- data.frame(x,p,n,s)
+  for(i in c(1:10)){
+    a$x[i] <- .1*i-.05
+    temp <- filter(combo, AwayWin > .1*(i-1), AwayWin < .1*i)
+    a$p[i] <- nrow(filter(temp, FTR == "A")) / nrow(temp)
+    a$n[i] <- nrow(temp)
+  }
+  ggplot(a, aes(x=x, y=p, color="red")) +
+    geom_point(aes(size=n)) +
+    geom_text(aes(label=s,hjust=0, vjust=2)) +
+    geom_abline(intercept = 0, slope = 1) +
+    xlim(0, 1) +
+    ylim(0, 1) +
+    ggtitle("Predicted Away Win Probability Validation") +
+    xlab("Predicted Away Win Percentage") +
+    ylab("Actual Away Win Percentage")
+}
+drawplot <- function(combo){
+  x <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  p <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  n <- c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)
+  s <- c(".05-.07",".07-.09",".09-.11",".11-.13",".13-.15",".15-.17",".17-.19",".19-.21",".21-.23",".23-.25",".25-.27",".27-.29",".29-.31",".31-.33",".33-.35")
+  d <- data.frame(x,p,n,s)
+  for(i in c(1:15)){
+    d$x[i] <- .02*i+.04
+    temp <- filter(combo, Draw > .02*i+.03, Draw < .02*i+.05)
+    d$p[i] <- nrow(filter(temp, FTR == "D")) / nrow(temp)
+    d$n[i] <- nrow(temp)
+  }
+  ggplot(d, aes(x=x, y=p, color="red")) +
+    geom_point(aes(size=n)) +
+    geom_text(aes(label=s,hjust=0, vjust=2)) +
+    geom_abline(intercept = 0, slope = 1) +
+    xlim(0, .4) +
+    ylim(0, .4) +
+    ggtitle("Predicted Draw Probability Validation") +
+    xlab("Predicted Draw Percentage") +
+    ylab("Actual Draw Percentage")
+}
+```
+
+## Goal Differential Prediction
+
+  All of the data for the statistical models came from the game data set. The data was split into training and testing data using a 25/75 sample split with a set.seed value so that the smaple was reproduceable
+```{r}
+set.seed(100)
+train.sample <- sample(1:nrow(games), (nrow(games)/4), replace=FALSE)
+training <- games[train.sample,]
+testing <- games[-train.sample,]
+write.csv(training, "./training.csv")
+write.csv(testing, "./testing.csv")
+```
+
+  Since I have known outputs, goal differential and home and away goals score, I will be using supervised machine learning algorithms. I chose to use multiple linear regression and support vector machine models since I have real numerical values, so there is no classification involved.
+
+### Regression Model
+
+  The first thing to be predicted is the goal differential in the games, starting with the regression model. I ran a variable selection analysis using the regsubsets function from the leaps package, so that I could determine which variables to use.
+```{r}
+w0 <- regsubsets(GoalDiff ~ HomeAttacking + AwayAttacking + HomeMidfield + AwayMidfield + HomeDefense + AwayDefense + HomeGoalkeeper + AwayGoalkeeper + HomeBench + AwayBench, training)
+# + HomeRest + AwayRest + RestDiff
+```
+```{r,echo=FALSE}
+plot(w0,scale = "adjr2")
+```
+  Based on the plot above, most of the best selection of models includes all of the variables except for the Home and Away Goalkeepers. So I used all of these variables to run the regression model.
+
+```{r}
+gf1 <- lm(GoalDiff ~ HomeAttacking + AwayAttacking + HomeMidfield + AwayMidfield + HomeDefense + AwayDefense +  HomeBench + AwayBench, training)
+```
+```{r,echo=FALSE}
+summary(gf1)
+print("Residual Standard Deviation")
+sd1 <- sd(resid(gf1))
+sd1
+```
+
+  Nearly all of the predictors came out statistically significant, as well as the F-statistic. The R-squared value is a bit low, however, at 13.72%. In order to interpret the predictors, I'll use the HomeAttacking predictor as an example. According to the model, for every 1 increase in the home team's attacking rating, they can expect to win by 0.03987 more goals.
+```{r,echo=FALSE, fig.height = 4, fig.width = 6}
+#anova(gf1)
+plot(gf1)
+```
+
+  The plots for the model don't appear to have any unusual trends, meaning there appears to be minimal bias in the fitted values.
+
+  I predicted the goal differential of the games in the testing data. I will be using the following 5 games from the 2018-2019 season as examples for comparisons: Sampdoria vs Juventus (Italy Div 1), Extremadura UD vs Lugo (Spain Div 2), Caen vs Reims (France Div 1), Sp Lisbon vs Tondela (Portugal Div 1), Rotherham vs Middlesbrough (England Div 2).
+```{r,echo=FALSE}
+GameNum <- testing$GameNum
+HomeTeam <- testing$HomeTeam
+AwayTeam <- testing$AwayTeam
+League <- testing$League
+Season <- testing$Season
+```
+```{r}
+pred_gd <- predict(gf1, testing)
+gd1 <- data.frame(GameNum,HomeTeam,AwayTeam,pred_gd)
+gd1[c(20,25,176,188,234),c(2:4)]
+```
+
+  As you can see above, Juventus is expected to win by a total of 1.32 goals and Caen by 0.53 goals.
+
+### SVM Model
+
+  I used the same variables as the regression when making my svm model
+```{r}
+svm1 <- svm(GoalDiff ~ HomeAttacking + AwayAttacking + HomeMidfield + AwayMidfield + 
+            HomeDefense + AwayDefense + HomeBench + AwayBench, data = testing, 
+            kernel = "linear", cost = 10, scale = FALSE)
+print("Residual Standard Deviation")
+sd2 <- sd(resid(svm1))
+sd2
+```
+
+  The residual standard deviation on the svm model is a little bit higher than in the regression model, indicating a bit more variance in the model.
+```{r,echo=FALSE}
+Fit <- fitted(svm1)
+fit_svm1 <- data.frame(GameNum,HomeTeam,AwayTeam,Fit)
+fit_svm1[c(20,25,176,188,234),c(2:4)]
+```
+
+  The svm expected goal differential came out for the most part, pretty close to the regression model. There were some games with big differences, such as the Sampdoria vs Juventus. Juventus was a heavy favorite in the regression model but is a slight underdog in the svm model.
+
+## Team Goals Prediction
+
+  For this prediction I looked at predicting the amount of goals each team will score. So I will be using to models, one for home goals and one for away goals.
+
+### Regression Model
+
+```{r}
+w1 <- regsubsets(FTHG ~ HomeAttacking + AwayAttacking + HomeMidfield + AwayMidfield + HomeDefense + AwayDefense + HomeGoalkeeper + AwayGoalkeeper + HomeBench + AwayBench, training)
+```
+```{r,echo=FALSE}
+plot(w1,scale = "adjr2")
+```
+
+  When looking at the subset selection above, there was not really a logical mixture of variables to use. So for the home team goals I ended up choosing each the home attacking and midfield, and the away defense and goalkeeper. For the away goals I did the reverse choosing the away attacking and midfield, and the home defense and goalkeeper. I chose these variables because the attackers/midfielders are usually responsible for most of the goals scored and the other team's defense/goalie are responsible for stopping goals.
+```{r}
+hgr1 <- lm(FTHG ~ HomeAttacking + HomeMidfield + AwayDefense + AwayGoalkeeper, training)
+agr1 <- lm(FTAG ~ AwayAttacking + AwayMidfield + HomeDefense + HomeGoalkeeper, training)
+```
+```{r,echo=FALSE}
+summary(hgr1)
+#plot(hg1)
+summary(agr1)
+#plot(ag1)
+sd(resid(hgr1))
+```
+```{r,echo=FALSE, fig.height = 4, fig.width = 6}
+#anova(hgr1)
+plot(hgr1)
+```
+```{r}
+HomePred <- predict(hgr1, testing)
+hg1 <- data.frame(GameNum,HomeTeam,AwayTeam,HomePred)
+AwayPred <- predict(agr1, testing)
+ag1 <- data.frame(GameNum,HomeTeam,AwayTeam,AwayPred)
+
+result <- data.frame(GameNum,HomeTeam,AwayTeam,HomePred,AwayPred)
+result[c(20,25,176,188,234),c(2:5)]
+```
+
+  Based on the model, in the Rotherham vs Middlesbrough, Rotherham has an expected goals of 0.95, while Middlesbrough has an expected goals of 1.56.
+
+### SVM Model
+
+Again, I used the same variables as the regression when making my svm model
+```{r}
+svmhg <- svm(FTHG ~ HomeAttacking + HomeMidfield + AwayDefense + AwayGoalkeeper, 
+             data = testing, kernel = "linear", cost = 10, scale = FALSE)
+svmag <- svm(FTAG ~ AwayAttacking + AwayMidfield + HomeDefense + HomeGoalkeeper, 
+             data = testing, kernel = "linear", cost = 10, scale = FALSE)
+
+HomePred <- fitted(svmhg)
+fit_svmhg <- data.frame(GameNum,HomeTeam,AwayTeam,HomePred)
+AwayPred <- fitted(svmag)
+fit_svmag <- data.frame(GameNum,HomeTeam,AwayTeam,AwayPred)
+
+result2 <- data.frame(GameNum,HomeTeam,AwayTeam,HomePred,AwayPred)
+result2[c(20,25,176,188,234),c(2:5)]
+```
+
+  Similiarly to the goal differential models, the svm expected total goals came out pretty similar to the regression model.
+
+## Win Probabilities
+
+  The next thing I wanted to model was the probabilities of each possible match result. During league matches in soccer, there is no extra time. This means each match can end in either a home win, away win, or a draw. Since there are three possible results, a binary 0 or 1 (loss or win) can't be used to predict the probabilities. This limits the amount of methods that can be used to predict outcome probabilities, like logistic regression. I tried out 2 different statistical modeling techniques, one using t-stat distributions and the other using poisson distributions.
+
+### Goal Differential - t-stat
+
+  For this method I predicted the probability that the previously prdicted goal differential will result in a home win, away win, and draw based on the t distribution of the data. To predict the chance of a home win, I found the p-value of the t-score that the goal differential will be above 0.5 (rounds up to 1 or greater). To predict the chance of an away win, I found the p-value of the t-score that the goal differential will be below -0.5 (rounds down to -1 or less). To predict the chance of an draw, I plugged in the following equation: 1 - Home Win - Away Win to find the p-value that the goal differential will be between -0.5 and 0.5.
+
+#### Regression Goal Differential Model
+
+  Using the predicted goal differential from the regression model I got the following win probabilities.
+```{r}
+gd1$HomeWin <- pt((gd1$pred_gd - .5)/(sd1), nrow(testing))
+gd1$AwayWin <-  pt(-(gd1$pred_gd + .5)/(sd1), nrow(testing))
+gd1$Draw <- 1 - gd1$HomeWin - gd1$AwayWin
+
+gd1[c(20,25,176,188,234),c(2:7)]
+```
+
+  These probabilities look pretty consistant with what you would expect from the corresponding goal differentials. Juventus is expected to beat Sampdoria by 1.32 goals, this means that Juventus is expected to win 69.6% of the time, Sampdoria is expected to win 12.8%, and they are expected to draw 17.9% of the time. The Caen vs Reims game is predicted to be closer with Caen winning by an expected 0.53 goals. As a result, Caen's win probability is a bit lower than Juventus's at 50.6%, and Reims is a bit higher than Sampdoria's at 26.0%. Since the expected goals is closer to 0, the probability of a draw is higher at 23.3%.
+
+  When the model predicts that Juventus has a win probability of 69%, it is predicting that they will actually win 69% of the time in real life. Same thing goes for Sampdoria winning and both of them drawing. In order to validate how well the model worked, you need to compare the predicted results to the actual results. So by grouping all of the games where the home team is expected to win between 40%-50% of the time, you'd expect the home team to win on average 45% of the real life games. This can be visualized by grouping all of the predicted values for every game onto the graphs below.
+```{r,echo=FALSE, fig.height = 3, fig.width = 4.5}
+combo <- merge(gd1, games, by = "GameNum")
+
+homeplot(combo)
+awayplot(combo)
+drawplot(combo)
+```
+
+  As the graph shows, the home win predictions were pretty accurate. For all the games with a home win probability between 40%-50%, the home team won those games on average nearly 45% of the time. The away probabilities were also pretty accurate. Most of the groups were a little below the line, indicating that there may be a little bit of an over prediction of away wins. For the draw probabilities, the majority of the games are above the line, indicating there is some noticable underprediction.
+
+#### SVM Goal Differential Model
+
+  The same steps were repeated for the svm model.
+```{r}
+fit_svm1$HomeWin <- pt((fit_svm1$Fit - .5)/(sd2), nrow(testing))
+fit_svm1$AwayWin <-  pt(-(fit_svm1$Fit + .5)/(sd2), nrow(testing))
+fit_svm1$Draw <- 1 - fit_svm1$HomeWin - fit_svm1$AwayWin
+
+fit_svm1[c(20,25,176,188,234),c(2:7)]
+```
+```{r,echo=FALSE, fig.height = 3, fig.width = 4.5}
+combo <- merge(fit_svm1, games, by = "GameNum")
+
+homeplot(combo)
+awayplot(combo)
+drawplot(combo)
+```
+
+  There are some much more noticeable issues with the svm goal differential prediction model. For home win probabilities, the model is not good at predicting the extremes. There is a pretty big over prediction in the away team's win probabilities. There is a similar but larger under prediction of the draw probabilities.
+
+### Team Goals Scored - Poisson
+
+  Another way of going about predicting win percentages is to use poisson distributions. In real life, soccer scores are integers, not decimals. Poisson distributions would predict the probability a team would score 0, 1, 2, etc goals in a game. Since poisson distributions can't use negative numbers, I will be using the total goals scored models.
+
+  Below is an example of how the predictions are formulated. Caen is expected to score 1.52 goals in this game. By plugging this number into the dpois function, they are expected to score 0 goals 21.9% of the time, 1 goal 33.2% of the time, and so on. Reims has a lower expected goals so their chance of scoring 0 & 1 goals is higher than Caen and the chance of scoring 2 or more goals is much lower. (Goal5 represents the probability of scoring 5 or more goals, not just 5 goals)
+```{r,echo=FALSE}
+read.csv("./poissonexample2.csv")
+```
+
+  After these goal probabilities are calculated, they are all multiplied together to find the probabilities of every possible result up to 5 goals to create the data frame below. There is a 7.85% chance the game ends 0-0 or a 9.29% chance Caen, the home team, will win 2-1. In order to calculate the win probabilities you need to add up all of the results that result in a home win, away win, or draw. So all of the results where the home team wins (bottom left side) are added up together. All of the results where the away team wins (top right side) are added up together. All of the results in the middle, [Home0,Away0], [Home1,Away1], etc are added up together.
+```{r,echo=FALSE}
+read.csv("./poissonexample.csv")
+```
+
+#### Regression Total Goals Scored Model
+
+  Below are the predicted probabilities for all of the regression predicted goals scored.
+```{r}
+hg1$Goal0 <- dpois(0, lambda = hg1$HomePred)
+hg1$Goal1 <- dpois(1, lambda = hg1$HomePred)
+hg1$Goal2 <- dpois(2, lambda = hg1$HomePred)
+hg1$Goal3 <- dpois(3, lambda = hg1$HomePred)
+hg1$Goal4 <- dpois(4, lambda = hg1$HomePred)
+hg1$Goal5 <- 1-ppois(4, lambda = hg1$HomePred)
+
+ag1$Goal0 <- dpois(0, lambda = ag1$AwayPred)
+ag1$Goal1 <- dpois(1, lambda = ag1$AwayPred)
+ag1$Goal2 <- dpois(2, lambda = ag1$AwayPred)
+ag1$Goal3 <- dpois(3, lambda = ag1$AwayPred)
+ag1$Goal4 <- dpois(4, lambda = ag1$AwayPred)
+ag1$Goal5 <- 1-ppois(4, lambda = ag1$AwayPred)
+
+result$HomeWin <- hg1$Goal1*ag1$Goal0 + hg1$Goal2*ag1$Goal0 + hg1$Goal2*ag1$Goal1 + hg1$Goal3*ag1$Goal0 + hg1$Goal3*ag1$Goal1 + hg1$Goal3*ag1$Goal2 + hg1$Goal4*ag1$Goal0 + hg1$Goal4*ag1$Goal1 + hg1$Goal4*ag1$Goal2 + hg1$Goal4*ag1$Goal3 + hg1$Goal5*ag1$Goal0 + hg1$Goal5*ag1$Goal1 + hg1$Goal5*ag1$Goal2 + hg1$Goal5*ag1$Goal3 + hg1$Goal5*ag1$Goal4
+result$AwayWin <- ag1$Goal1*hg1$Goal0 + ag1$Goal2*hg1$Goal0 + ag1$Goal2*hg1$Goal1 + ag1$Goal3*hg1$Goal0 + ag1$Goal3*hg1$Goal1 + ag1$Goal3*hg1$Goal2 + ag1$Goal4*hg1$Goal0 + ag1$Goal4*hg1$Goal1 + ag1$Goal4*hg1$Goal2 + ag1$Goal4*hg1$Goal3 + ag1$Goal5*hg1$Goal0 + ag1$Goal5*hg1$Goal1 + ag1$Goal5*hg1$Goal2 + ag1$Goal5*hg1$Goal3 + ag1$Goal5*hg1$Goal4
+result$Draw <- hg1$Goal0*ag1$Goal0 + hg1$Goal1*ag1$Goal1 + hg1$Goal2*ag1$Goal2 + hg1$Goal3*ag1$Goal3 + hg1$Goal4*ag1$Goal4 + hg1$Goal5*ag1$Goal5
+
+result[c(20,25,176,188,234),c(2:8)]
+```
+```{r,echo=FALSE, fig.height = 3, fig.width = 4.5}
+combo <- merge(result, games, by = "GameNum")
+
+homeplot(combo)
+awayplot(combo)
+drawplot(combo)
+```
+
+  The home and win probabilities were pretty accurate and close to the line. The draw probabilities are a little better distributed than the t-stat goal differential regression model. Part of this is likely do to the fact that the highest draw probability for the t-stat model was around 24.5%. This model is able to predict higher and as a result removed some of that previous under prediction.
+
+#### SVM Total Goals Scored Model
+
+  The same steps were repeated for the svm model.
+```{r, echo=FALSE}
+fit_svmhg$Goal0 <- dpois(0, lambda = fit_svmhg$HomePred)
+fit_svmhg$Goal1 <- dpois(1, lambda = fit_svmhg$HomePred)
+fit_svmhg$Goal2 <- dpois(2, lambda = fit_svmhg$HomePred)
+fit_svmhg$Goal3 <- dpois(3, lambda = fit_svmhg$HomePred)
+fit_svmhg$Goal4 <- dpois(4, lambda = fit_svmhg$HomePred)
+fit_svmhg$Goal5 <- 1-ppois(4, lambda = fit_svmhg$HomePred)
+
+fit_svmag$Goal0 <- dpois(0, lambda = fit_svmag$AwayPred)
+fit_svmag$Goal1 <- dpois(1, lambda = fit_svmag$AwayPred)
+fit_svmag$Goal2 <- dpois(2, lambda = fit_svmag$AwayPred)
+fit_svmag$Goal3 <- dpois(3, lambda = fit_svmag$AwayPred)
+fit_svmag$Goal4 <- dpois(4, lambda = fit_svmag$AwayPred)
+fit_svmag$Goal5 <- 1-ppois(4, lambda = fit_svmag$AwayPred)
+
+result2$HomeWin <- fit_svmhg$Goal1*fit_svmag$Goal0 + fit_svmhg$Goal2*fit_svmag$Goal0 + fit_svmhg$Goal2*fit_svmag$Goal1 + fit_svmhg$Goal3*fit_svmag$Goal0 + fit_svmhg$Goal3*fit_svmag$Goal1 + fit_svmhg$Goal3*fit_svmag$Goal2 + fit_svmhg$Goal4*fit_svmag$Goal0 + fit_svmhg$Goal4*fit_svmag$Goal1 + fit_svmhg$Goal4*fit_svmag$Goal2 + fit_svmhg$Goal4*fit_svmag$Goal3 + fit_svmhg$Goal5*fit_svmag$Goal0 + fit_svmhg$Goal5*fit_svmag$Goal1 + fit_svmhg$Goal5*fit_svmag$Goal2 + fit_svmhg$Goal5*fit_svmag$Goal3 + fit_svmhg$Goal5*fit_svmag$Goal4
+result2$AwayWin <- fit_svmag$Goal1*fit_svmhg$Goal0 + fit_svmag$Goal2*fit_svmhg$Goal0 + fit_svmag$Goal2*fit_svmhg$Goal1 + fit_svmag$Goal3*fit_svmhg$Goal0 + fit_svmag$Goal3*fit_svmhg$Goal1 + fit_svmag$Goal3*fit_svmhg$Goal2 + fit_svmag$Goal4*fit_svmhg$Goal0 + fit_svmag$Goal4*fit_svmhg$Goal1 + fit_svmag$Goal4*fit_svmhg$Goal2 + fit_svmag$Goal4*fit_svmhg$Goal3 + fit_svmag$Goal5*fit_svmhg$Goal0 + fit_svmag$Goal5*fit_svmhg$Goal1 + fit_svmag$Goal5*fit_svmhg$Goal2 + fit_svmag$Goal5*fit_svmhg$Goal3 + fit_svmag$Goal5*fit_svmhg$Goal4
+result2$Draw <- fit_svmhg$Goal0*fit_svmag$Goal0 + fit_svmhg$Goal1*fit_svmag$Goal1 + fit_svmhg$Goal2*fit_svmag$Goal2 + fit_svmhg$Goal3*fit_svmag$Goal3 + fit_svmhg$Goal4*fit_svmag$Goal4 + fit_svmhg$Goal5*fit_svmag$Goal5
+
+result2[c(20,25,176,188,234),c(2:8)]
+```
+```{r,echo=FALSE, fig.height = 3, fig.width = 4.5}
+combo <- merge(result2, games, by = "GameNum")
+
+homeplot(combo)
+awayplot(combo)
+drawplot(combo)
+```
+  This svm model was fairly accurate for the home team, and had a slight under prediction of the away wins. This model was overall the best at predicting draw probabilities.
+
+## Final Standings Predictions
+
+  One last interesting thing I wanted to create using the models was a full season standings projection.For this process, I pulled all of the games that were played for a specific league during a specific season. Using each teams poisson regression win probabilities, I was able to tally up each team's expected wins, draws, and losses. In soccer they use a point system to determine the final standings. Each team gets 3 points for a win, 1 point for a draw, and 0 points for a loss. So I took the expected wins and draws and created an expected points variable. Below are 3 final standings examples for 3 leagues with different variations of team talent levels.
+```{r, echo=FALSE}
+HomePred <- predict(hgr1, games)
+AwayPred <- predict(agr1, games)
+
+hGoal0 <- dpois(0, lambda = HomePred)
+hGoal1 <- dpois(1, lambda = HomePred)
+hGoal2 <- dpois(2, lambda = HomePred)
+hGoal3 <- dpois(3, lambda = HomePred)
+hGoal4 <- dpois(4, lambda = HomePred)
+hGoal5 <- 1-ppois(4, lambda = HomePred)
+
+aGoal0 <- dpois(0, lambda = AwayPred)
+aGoal1 <- dpois(1, lambda = AwayPred)
+aGoal2 <- dpois(2, lambda = AwayPred)
+aGoal3 <- dpois(3, lambda = AwayPred)
+aGoal4 <- dpois(4, lambda = AwayPred)
+aGoal5 <- 1-ppois(4, lambda = AwayPred)
+
+games$HomeWin <- hGoal1*aGoal0 + hGoal2*aGoal0 + hGoal2*aGoal1 + hGoal3*aGoal0 + hGoal3*aGoal1 + hGoal3*aGoal2 + hGoal4*aGoal0 + hGoal4*aGoal1 + hGoal4*aGoal2 + hGoal4*aGoal3 + hGoal5*aGoal0 + hGoal5*aGoal1 + hGoal5*aGoal2 + hGoal5*aGoal3 + hGoal5*aGoal4
+games$AwayWin <- aGoal1*hGoal0 + aGoal2*hGoal0 + aGoal2*hGoal1 + aGoal3*hGoal0 + aGoal3*hGoal1 + aGoal3*hGoal2 + aGoal4*hGoal0 + aGoal4*hGoal1 + aGoal4*hGoal2 + aGoal4*hGoal3 + aGoal5*hGoal0 + aGoal5*hGoal1 + aGoal5*hGoal2 + aGoal5*hGoal3 + aGoal5*hGoal4
+games$Draw <- hGoal0*aGoal0 + hGoal1*aGoal1 + hGoal2*aGoal2 + hGoal3*aGoal3 + hGoal4*aGoal4 + hGoal5*aGoal5
+
+# games$pred_gd <- predict(gf1, games)
+# sd1 <- sd(resid(gf1))
+# games$HomeWin <- pt((games$pred_gd - .5)/(sd1), nrow(games))
+# games$AwayWin <-  pt(-(games$pred_gd + .5)/(sd1), nrow(games))
+# games$Draw <- 1 - games$HomeWin - games$AwayWin
+
+italy19 <- filter(games, League == "Serie A", Season == "2018/2019")
+italyclubs <- filter(games, League == "Serie A", Season == "2018/2019")
+italyclubs <- italyclubs$HomeTeam
+rating <- italy19$HomeOverall
+italyclubs <- data.frame(italyclubs, rating)
+italyclubs <- italyclubs[!duplicated(italyclubs$italyclubs),]
+italyclubs$wins <- 0
+italyclubs$draws <- 0
+italyclubs$losses <- 0
+italyclubs$pred_points <- 0
+italyclubs$actual_points <- 0
+
+for(i in c(1:nrow(italyclubs))){
+  temp <- filter(italy19, HomeTeam == italyclubs$italyclubs[i] | AwayTeam == italyclubs$italyclubs[i])
+  points <- 0
+  actual <- 0
+  wins <- 0
+  draws <- 0
+  losses <- 0
+  for(j in c(1:nrow(temp))){
+    if(temp$HomeTeam[j] == italyclubs$italyclubs[i]){
+      points <- points+3*temp$HomeWin[j]+temp$Draw[j]
+      wins <- wins+temp$HomeWin[j]
+      draws <- draws+temp$Draw[j]
+      losses <- losses+temp$AwayWin[j]
+      if(temp$FTR[j] == "H")
+        actual <- actual+3
+      if(temp$FTR[j] == "D")
+        actual <- actual+1
+    }
+    if(temp$AwayTeam[j] == italyclubs$italyclubs[i]){
+      points <- points+3*temp$AwayWin[j]+temp$Draw[j]
+      wins <- wins+temp$AwayWin[j]
+      draws <- draws+temp$Draw[j]
+      losses <- losses+temp$HomeWin[j]
+      if(temp$FTR[j] == "A")
+        actual <- actual+3
+      if(temp$FTR[j] == "D")
+        actual <- actual+1
+    }
+  }
+  italyclubs$pred_points[i] <- points
+  italyclubs$actual_points[i] <- actual
+  italyclubs$wins[i] <- wins
+  italyclubs$draws[i] <- draws
+  italyclubs$losses[i] <- losses
+}
+
+turkey18 <- filter(games, League == "Futbol Ligi 1", Season == "2017/2018")
+turkclubs <- filter(games, League == "Futbol Ligi 1", Season == "2017/2018")
+turkclubs <- turkclubs$HomeTeam
+rating <- turkey18$HomeOverall
+turkclubs <- data.frame(turkclubs, rating)
+turkclubs <- turkclubs[!duplicated(turkclubs$turkclubs),]
+turkclubs$wins <- 0
+turkclubs$draws <- 0
+turkclubs$losses <- 0
+turkclubs$pred_points <- 0
+turkclubs$actual_points <- 0
+
+for(i in c(1:nrow(turkclubs))){
+  temp <- filter(turkey18, HomeTeam == turkclubs$turkclubs[i] | AwayTeam == turkclubs$turkclubs[i])
+  points <- 0
+  actual <- 0
+  wins <- 0
+  draws <- 0
+  losses <- 0
+  for(j in c(1:nrow(temp))){
+    if(temp$HomeTeam[j] == turkclubs$turkclubs[i]){
+      points <- points+3*temp$HomeWin[j]+temp$Draw[j]
+      wins <- wins+temp$HomeWin[j]
+      draws <- draws+temp$Draw[j]
+      losses <- losses+temp$AwayWin[j]
+      if(temp$FTR[j] == "H")
+        actual <- actual+3
+      if(temp$FTR[j] == "D")
+        actual <- actual+1
+    }
+    if(temp$AwayTeam[j] == turkclubs$turkclubs[i]){
+      points <- points+3*temp$AwayWin[j]+temp$Draw[j]
+      wins <- wins+temp$AwayWin[j]
+      draws <- draws+temp$Draw[j]
+      losses <- losses+temp$HomeWin[j]
+      if(temp$FTR[j] == "A")
+        actual <- actual+3
+      if(temp$FTR[j] == "D")
+        actual <- actual+1
+    }
+  }
+  turkclubs$pred_points[i] <- points
+  turkclubs$actual_points[i] <- actual
+  turkclubs$wins[i] <- wins
+  turkclubs$draws[i] <- draws
+  turkclubs$losses[i] <- losses
+}
+
+spain17 <- filter(games, League == "La Liga Segunda Division", Season == "2016/2017")
+esp2clubs <- filter(games, League == "La Liga Segunda Division", Season == "2016/2017")
+esp2clubs <- esp2clubs$HomeTeam
+rating <- spain17$HomeOverall
+esp2clubs <- data.frame(esp2clubs, rating)
+esp2clubs <- esp2clubs[!duplicated(esp2clubs$esp2clubs),]
+esp2clubs$wins <- 0
+esp2clubs$draws <- 0
+esp2clubs$losses <- 0
+esp2clubs$pred_points <- 0
+esp2clubs$actual_points <- 0
+
+for(i in c(1:nrow(esp2clubs))){
+  temp <- filter(spain17, HomeTeam == esp2clubs$esp2clubs[i] | AwayTeam == esp2clubs$esp2clubs[i])
+  points <- 0
+  actual <- 0
+  wins <- 0
+  draws <- 0
+  losses <- 0
+  for(j in c(1:nrow(temp))){
+    if(temp$HomeTeam[j] == esp2clubs$esp2clubs[i]){
+      points <- points+3*temp$HomeWin[j]+temp$Draw[j]
+      wins <- wins+temp$HomeWin[j]
+      draws <- draws+temp$Draw[j]
+      losses <- losses+temp$AwayWin[j]
+      if(temp$FTR[j] == "H")
+        actual <- actual+3
+      if(temp$FTR[j] == "D")
+        actual <- actual+1
+    }
+    if(temp$AwayTeam[j] == esp2clubs$esp2clubs[i]){
+      points <- points+3*temp$AwayWin[j]+temp$Draw[j]
+      wins <- wins+temp$AwayWin[j]
+      draws <- draws+temp$Draw[j]
+      losses <- losses+temp$HomeWin[j]
+      if(temp$FTR[j] == "A")
+        actual <- actual+3
+      if(temp$FTR[j] == "D")
+        actual <- actual+1
+    }
+  }
+  esp2clubs$pred_points[i] <- points
+  esp2clubs$actual_points[i] <- actual
+  esp2clubs$wins[i] <- wins
+  esp2clubs$draws[i] <- draws
+  esp2clubs$losses[i] <- losses
+}
+```
+
+Italy Division 1 - Serie A 2018/2019 season
+```{r}
+italyclubs <- arrange(italyclubs, desc(pred_points))
+italyclubs
+```
+
+  In Serie A, there is a very dominant team, Juventus, a strong 2nd tier, Inter-Lazio, and a 3rd tier of the rest, and the projections reflect that. There was a bit of variation and there were some teams that greatly overperformed projections, like Atalanta, and underperformed, like Chievo.
+
+Turkey Division 1 - Futbol Ligi 1 2017/2018 season
+```{r}
+turkclubs <- arrange(turkclubs, desc(pred_points))
+turkclubs
+```
+
+  The Turkish league is a little more balanced with a few stronger teams at the top. There was a tighter range in projected points than Serie A.
+
+Spain Division 2 - La Liga Segunda Division 2016/2017 season
+```{r}
+esp2clubs <- arrange(esp2clubs, desc(pred_points))
+esp2clubs
+```
+
+  The Spanish second division is very evenly balanced. Outside of the top team, Levante, the range between the 2nd best projection and worst team is only 20 points, whereas Serie A's range is 43. There is also a low amount of variation between the projections and the actual results.
+
+# Discussion
+
+  There are a few limitations and sources of bias in the data and model itself that should be addressed. As mentioned in the introduction, EA Sports Fifa ratings are subjective ratings made by talent scouts. While the ratings tend to be fairly good at rating a player's skill set, they are not perfect. The data sets used in the project are also only preseason rankings. EA Sports often puts out updates to the game where it will make adjustments to player ratings if a player is overperforming or underperforming their preseason ratings. Since I don't have access to any of those in season adjustments there may be some increasing bias as the season goes on because the models are only using the pre season rankings. One last major source of bias in the model is that it always uses the same lineup for each team for the whole season. In real life, game day lineups are always changing, whether its due to tactical strategies, injuries, or individual performance. Since I do not have data on game time lineups, I used the same lineups with the best players for each entire season. So there might be a bit of an over estimation for teams that lost a lot of players to injury.
+  
+  In the introduction, I stated that my goals were to create models to predict goal differential, goals scored, win probabilities, and final standings. I was able to successfully create multiple models for all of these different predicitions. There is plenty of room for improvements in the models, but they seemed to do a good at making predictions I outlined previously, some better than others. The models are also able to serve the real world functions I previously outlined. A club's front office could insert potential free agents into a model to see how much of an impact they might have on the final standings. Managers can insert different lineups into a model and see how it affects their probability of winning. Sports bettors can look at the goal differential models to find inefficiencies in the betting market. There are also plenty of other models that could be created out of the data, like predicting a player's win shares or future player value.
+
+# Conclusions
+
+  Overall, I used 4 different models in predicting at goal differential, goals scored, win probabilities, and final standings. The regression model ended up being the strongest model for predicting the expected goal differential and goals scored. Based on the validation plots, the regression model using a poisson distribution was the most accurate model for predicting win probability. That is also why I chose to use it to predict the final standings. I believe that FIFA player data, while it does have its flaws, does a good job at making soccer predictions. There is likely room for improvement with more robust objective data, but the FIFA data is good for doing a cheap open sourced project. While these models did have fairly low R-squares, much of that can be attributed to the many unpredictable events at sporting events. This is esspecially true in a low scoring game like soccer, where one misstep could be all it takes to change the outcome.
+
+# Acknowledgments
+
+  I want to thank Prof. Laura Bruckman first for all of her support throughout the whole process of writing this report. Thank you to Prof. Roger French for teaching DSCI 351 & 353 where I learned many of the data science methods I used in this project. I also want to thank my Statistics advisor Prof. Paula Fitzgibbon for being an additional resource for the report. Thanks to Jiqi Liu and the DSCI 351 class for their valuable feedback. Finally I want to thank Case Western Reserve University for providing many resources for completing this report, especially the ODS-VDI.
+
+# References, Citations
+
+Data set links:
+
+https://www.kaggle.com/rovilayjnr/fifa-17-datasets
+
+https://www.kaggle.com/thec03u5/fifa-18-demo-player-dataset
+
+https://www.kaggle.com/karangadiya/fifa19
+
+https://www.kaggle.com/sashchernuh/european-football
+
+References
+
+https://fivethirtyeight.com/methodology/how-our-club-soccer-predictions-work/
+
+https://stackoverflow.com
+
+https://ismayc.github.io/rbasics-book/4-rmarkdown.html
+
+Packages used:
+
+dplyr, ggplot2, jtools, leaps, e1071
+
+
+
+
+```{r,echo=FALSE}
+#Misc. code
+# write.csv(gd1, "./gd1.csv")
+# write.csv(fit_svm1, "./fit_svm1.csv")
+# write.csv(result, "./result.csv")
+# write.csv(result2, "./result2.csv")
+# write.csv(italyclubs, "./italyclubs.csv")
+# write.csv(turkclubs, "./turkclubs.csv")
+# write.csv(esp2clubs, "./esp2clubs.csv")
+# Home <- c("Home0","Home1","Home2","Home3","Home4","Home5")
+# Away0 <- c(hg1$Goal0[176]*ag1$Goal0[176],hg1$Goal1[176]*ag1$Goal0[176],hg1$Goal2[176]*ag1$Goal0[176],hg1$Goal3[176]*ag1$Goal0[176],hg1$Goal4[176]*ag1$Goal0[176],hg1$Goal5[176]*ag1$Goal0[176])
+# Away1 <- c(hg1$Goal0[176]*ag1$Goal1[176],hg1$Goal1[176]*ag1$Goal1[176],hg1$Goal2[176]*ag1$Goal1[176],hg1$Goal3[176]*ag1$Goal1[176],hg1$Goal4[176]*ag1$Goal1[176],hg1$Goal5[176]*ag1$Goal1[176])
+# Away2 <- c(hg1$Goal0[176]*ag1$Goal2[176],hg1$Goal1[176]*ag1$Goal2[176],hg1$Goal2[176]*ag1$Goal2[176],hg1$Goal3[176]*ag1$Goal2[176],hg1$Goal4[176]*ag1$Goal2[176],hg1$Goal5[176]*ag1$Goal2[176])
+# Away3 <- c(hg1$Goal0[176]*ag1$Goal3[176],hg1$Goal1[176]*ag1$Goal3[176],hg1$Goal2[176]*ag1$Goal3[176],hg1$Goal3[176]*ag1$Goal3[176],hg1$Goal4[176]*ag1$Goal3[176],hg1$Goal5[176]*ag1$Goal3[176])
+# Away4 <- c(hg1$Goal0[176]*ag1$Goal4[176],hg1$Goal1[176]*ag1$Goal4[176],hg1$Goal2[176]*ag1$Goal4[176],hg1$Goal3[176]*ag1$Goal4[176],hg1$Goal4[176]*ag1$Goal4[176],hg1$Goal5[176]*ag1$Goal4[176])
+# Away5 <- c(hg1$Goal0[176]*ag1$Goal5[176],hg1$Goal1[176]*ag1$Goal5[176],hg1$Goal2[176]*ag1$Goal5[176],hg1$Goal3[176]*ag1$Goal5[176],hg1$Goal4[176]*ag1$Goal5[176],hg1$Goal5[176]*ag1$Goal5[176])
+# poissonexample <- data.frame(Home,Away0,Away1,Away2,Away3,Away4,Away5)
+# Team <- c(as.character(hg1$HomeTeam[176]),as.character(ag1$AwayTeam[176]))
+# Pred <- c(hg1$HomePred[176],ag1$AwayPred[176])
+# Goal0 <- c(hg1$Goal0[176],ag1$Goal0[176])
+# Goal1 <- c(hg1$Goal1[176],ag1$Goal1[176])
+# Goal2 <- c(hg1$Goal2[176],ag1$Goal2[176])
+# Goal3 <- c(hg1$Goal3[176],ag1$Goal3[176])
+# Goal4 <- c(hg1$Goal4[176],ag1$Goal4[176])
+# Goal5 <- c(hg1$Goal5[176],ag1$Goal5[176])
+# poissonexample2 <- data.frame(Team,Pred,Goal0,Goal1,Goal2,Goal3,Goal4,Goal5)
+# write.csv(poissonexample, "./poissonexample.csv")
+# write.csv(poissonexample2, "./poissonexample2.csv")
+```

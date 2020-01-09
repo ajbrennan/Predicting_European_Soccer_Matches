@@ -1,0 +1,1275 @@
+Load the sqlite file
+```{r}
+#One of the datasets was a sqlite file so I needed to load that into R using the RSQLite package
+library("RSQLite")
+
+con <- dbConnect(drv=RSQLite::SQLite(), dbname="./database.sqlite")
+tables <- dbListTables(con)
+tables <- tables[tables != "sqlite_sequence"]
+lDataFrames <- vector("list", length=length(tables))
+
+for (i in seq(along=tables)) {
+  lDataFrames[[i]] <- dbGetQuery(conn=con, statement=paste("SELECT * FROM '", tables[[i]], "'", sep=""))
+}
+
+#Save the results dataset (the second dataset)
+write.csv(lDataFrames[[2]], "./match_results.csv")
+
+```
+
+Remove teams that won't be used and clean the team names
+```{r}
+library(dplyr)
+library(tidyr)
+library(stringr)
+#Load dataset
+matches <- read.csv("./match_results.csv")
+
+#Pull the games from the 2016/2017 season
+matches17 <- matches %>%
+  filter(Season == "2016/2017") %>%
+  #Remove games for leagues not included in fifa 17
+  filter(Div != "EC") %>%
+  filter(Div != "G1") %>%
+  filter(Div != "SC1") %>%
+  filter(Div != "SC2") %>%
+  filter(Div != "SC3")
+#Pull the games from the 2017/2018 season
+matches18 <- matches %>%
+  filter(Season == "2017/2018") %>%
+  #Remove games for leagues not included in fifa 18
+  filter(Div != "EC") %>%
+  filter(Div != "G1") %>%
+  filter(Div != "SC1") %>%
+  filter(Div != "SC2") %>%
+  filter(Div != "SC3")
+#Pull the games from the 2018/2019 season
+matches19 <- matches %>%
+  filter(Season == "2018/2019") %>%
+  #Remove games for leagues not included in fifa 19
+  filter(Div != "EC") %>%
+  filter(Div != "G1") %>%
+  filter(Div != "SC1") %>%
+  filter(Div != "SC2") %>%
+  filter(Div != "SC3")
+
+
+#Convert special characters (accented letters from other languages) to simple english letters
+unwanted_array = list('À'='A', 'Á'='A', 'Â'='A', 'Ã'='A', 'Ä'='A', 'Å'='A', 'Æ'='A', 'Ç'='C', 'È'='E', 'É'='E', 'Ê'='E', 'Ë'='E', 'Ì'='I', 'Í'='I', 'Î'='I', 'Ï'='I', 'İ'='I', 'Ł'='L', 'Ñ'='N', 'Ò'='O', 'Ó'='O', 'Ô'='O', 'Õ'='O', 'Ö'='O', 'Ø'='O', 'Ù'='U', 'Š'='S', 'Ś'='S', 'Ú'='U', 'Û'='U', 'Ü'='U', 'Ý'='Y', 'Ž'='Z', 'Þ'='B', 'ß'='Ss', 'à'='a', 'á'='a', 'â'='a', 'ã'='a', 'ä'='a', 'å'='a', 'ą'='a', 'æ'='a', 'ç'='c', 'è'='e', 'é'='e', 'ê'='e', 'ë'='e', 'ę'='e', 'ğ'='g', 'ì'='i', 'í'='i', 'î'='i', 'ï'='i', 'ı'='i', 'ł'='l', 'ð'='o', 'ñ'='n', 'ň'='n', 'ń'='n', 'ò'='o', 'ó'='o', 'ô'='o', 'õ'='o', 'ö'='o', 'ø'='o', 'š'='s', 'ş'='s', 'ù'='u', 'ú'='u', 'û'='u', 'ü'='u', 'ý'='y', 'ý'='y', 'þ'='b', 'ÿ'='y', 'ź'='z', 'ž'='z')
+```
+
+Process the FIFA 17 data
+```{r}
+#Load dataset
+fifa17 <- read.csv("./FIFA17.csv")
+#Convert special characters (accented letters from other languages) to simple english letters
+fifa17$Club <- chartr(paste(names(unwanted_array), collapse=''), paste(unwanted_array, collapse=''), fifa17$Club)
+
+
+#Pull all of the teams in fifa 17
+clubsfifa17 <- as.character(fifa17$Club)
+clubsfifa17 <- unique(clubsfifa17)
+clubsmatches17 <- as.character(matches17$HomeTeam)
+clubsmatches17 <- unique(clubsmatches17)
+same17 <- intersect(clubsfifa17,clubsmatches17)
+different17 <- setdiff(clubsmatches17,same17)
+
+
+#Save the vectors and process them
+write.csv(same17, "./same17.csv")
+write.csv(different17, "./diff17.csv")
+write.csv(clubsfifa17, "./clubs17.csv")
+
+#The team name conversion files that I made manually
+convert17 <- read.csv("./convert17.csv")
+
+
+#Convert the club names so that they are now the same as the club names in the matches dataset
+fifa17 <- merge(fifa17, convert17, by = "Club", all = T)
+fifa17 <- fifa17 %>%
+  select(-Club) %>%
+  rename(Club = "New")
+
+#Verify that there aren't any more mismatches between the two datasets
+clubsfifa17 <- as.character(fifa17$Club)
+clubsfifa17 <- unique(clubsfifa17)
+clubsmatches17 <- as.character(matches17$HomeTeam)
+clubsmatches17 <- unique(clubsmatches17)
+same17 <- intersect(clubsfifa17,clubsmatches17)
+different17 <- setdiff(clubsmatches17,same17)
+
+#Remove teams from the fifa dataset that do not appear in the matches dataset
+clubsmatches17 <- as.data.frame(clubsmatches17)
+clubsmatches17 <- rename(clubsmatches17, Club = "clubsmatches17")
+fifa17 <- inner_join(clubsmatches17, fifa17, by = "Club")
+leagues17 <- matches17 %>%
+  select(HomeTeam, Div) %>%
+  rename(Club = "HomeTeam")
+leagues17 <- unique(leagues17)
+clubsmatches17 <- merge(clubsmatches17, leagues17, by = "Club", all = T)
+
+
+
+#Change rating from factor to numeric
+fifa17$Rating < as.numeric(fifa17$Rating)
+#Split Preffered_Position into 3 columns and combine it with the Fifa 17 dataset
+q <- as.data.frame(str_split_fixed(fifa17$Preffered_Position, "/", 3))
+q <- rename(q, Pos1 = "V1", Pos2 = "V2", Pos3 = "V3")
+fifa17 <- cbind(fifa17, q)
+fifa17$PlayerID <- c(1:nrow(fifa17))
+
+#Create all of the variables for each of the positions and rating aggregates for each team
+clubs17 <- clubsmatches17
+clubs17[,c(3:26)] <- NA
+clubs17 <- clubs17 %>%
+  rename(GK = "V3", F1 = "V4", F2 = "V5", M1 = "V6", M2 = "V7", M3 = "V8", M4 = "V9", D1 = "V10", D2 = "V11", D3 = "V12", D4 = "V13", B1 = "V14", B2 = "V15", B3 = "V16", B4 = "V17", B5 = "V18", B6 = "V19", B7 = "V20", Overall = "V21", Goalkeeper = "V22", Attacking = "V23", Midfield = "V24", Defense = "V25", Bench = "V26")
+
+#Sort all of the players into their respective positions for each team
+x <- nrow(clubs17)
+complete = 0
+for(i in c(1:x)){ #For loop for all teams
+  y <- nrow(fifa17 %>%
+      filter(Club == clubs17$Club[i])) #Number of players on the team
+  for(j in c(1:y)){ #For loop for all players on the team
+    temp <- fifa17 %>% #Create temp variable for each player to run through in descending order based on rating
+      filter(Club == clubs17$Club[i]) %>%
+      arrange(desc(Rating)) %>%
+      select(Rating, PlayerID, Pos1, Pos2, Pos3) %>%
+      slice(j)
+    
+    #Find the best players for each grouping of positions 
+    #First set of if statements based on their 1st preferred position
+    #If the matched position is NA, then player's rating will be placed in the slot in the roster
+    #If their postion is full (ex. position is CM and all 4 midfield position are not NA) 
+    #then they will be sent to 2nd set of ifs
+    #Once a player is placed completed will be set to 1 so that they aren't placed multiple time
+    
+    #Find best goalkeeper
+    if(complete == 0){ 
+      if(fifa17$Pos1[temp$PlayerID] == "GK"){
+        if(is.na(clubs17$GK[i])){
+          clubs17$GK[i] <- temp$Rating
+          complete = 1
+        }
+      }
+      #Find 2 best attacking players (ST,CF,LW,RW)
+      if(fifa17$Pos1[temp$PlayerID] == "ST" | 
+         fifa17$Pos1[temp$PlayerID] == "CF" | 
+         fifa17$Pos1[temp$PlayerID] == "LW" | 
+         fifa17$Pos1[temp$PlayerID] == "RW"){
+        #Recursively determine if the first available position
+        if(!is.na(clubs17$F1[i]) & is.na(clubs17$F2[i])){
+          clubs17$F2[i] <- temp$Rating
+          complete = 1
+        }
+        if(is.na(clubs17$F1[i])){
+          clubs17$F1[i] <- temp$Rating
+          complete = 1
+        }
+      }
+      #Find 4 best midfilders (CAM,CM,LM,RM,CDM)
+      if(fifa17$Pos1[temp$PlayerID] == "CAM" | 
+         fifa17$Pos1[temp$PlayerID] == "CM" | 
+         fifa17$Pos1[temp$PlayerID] == "LM" | 
+         fifa17$Pos1[temp$PlayerID] == "RM" | 
+         fifa17$Pos1[temp$PlayerID] == "CDM"){
+        #Recursively determine if the first available position
+        if(!is.na(clubs17$M3[i]) & is.na(clubs17$M4[i])){
+          clubs17$M4[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$M2[i]) & is.na(clubs17$M3[i])){
+          clubs17$M3[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$M1[i]) & is.na(clubs17$M2[i])){
+          clubs17$M2[i] <- temp$Rating
+          complete = 1
+        }
+        if(is.na(clubs17$M1[i])){
+          clubs17$M1[i] <- temp$Rating
+          complete = 1
+        }
+      }
+      #Find 4 best defenders (CB,LB,RB,LWB,RWB)
+      if(fifa17$Pos1[temp$PlayerID] == "CB" | 
+         fifa17$Pos1[temp$PlayerID] == "LB" | 
+         fifa17$Pos1[temp$PlayerID] == "RB" | 
+         fifa17$Pos1[temp$PlayerID] == "LWB" | 
+         fifa17$Pos1[temp$PlayerID] == "RWB"){
+        #Recursively determine if the first available position
+        if(!is.na(clubs17$D3[i]) & is.na(clubs17$D4[i])){
+          clubs17$D4[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$D2[i]) & is.na(clubs17$D3[i])){
+          clubs17$D3[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$D1[i]) & is.na(clubs17$D2[i])){
+          clubs17$D2[i] <- temp$Rating
+          complete = 1
+        }
+        if(is.na(clubs17$D1[i])){
+          clubs17$D1[i] <- temp$Rating
+          complete = 1
+        }
+      }
+    }
+    
+    #If the player was not able to be placed in a position based on 1st preference repeat the
+    #same process based on the 2nd preferred position
+    #If they still aren't placed they will be sent to the 3rd set of ifs for the bench
+    
+    #Find best goalkeeper
+    if(complete == 0){
+      if(fifa17$Pos2[temp$PlayerID] == "GK"){
+        if(is.na(clubs17$GK[i])){
+          clubs17$GK[i] <- temp$Rating
+          complete = 1
+        }
+      }
+      #Find 2 best attacking players (ST,CF,LW,RW,CAM) (added CAM for second round because some
+      #teams only have one striker and sometimes use a CAM instead)
+      if(fifa17$Pos2[temp$PlayerID] == "ST" | 
+         fifa17$Pos2[temp$PlayerID] == "CF" | 
+         fifa17$Pos2[temp$PlayerID] == "LW" | 
+         fifa17$Pos2[temp$PlayerID] == "RW" | 
+         fifa17$Pos2[temp$PlayerID] == "CAM"){
+        #Recursively determine if the first available position
+        if(!is.na(clubs17$F1[i]) & is.na(clubs17$F2[i])){
+          clubs17$F2[i] <- temp$Rating
+          complete = 1
+        }
+        if(is.na(clubs17$F1[i])){
+          clubs17$F1[i] <- temp$Rating
+          complete = 1
+        }
+      }
+      #Find 4 best midfilders (CAM,CM,LM,RM,CDM)
+      if(fifa17$Pos2[temp$PlayerID] == "CAM" | 
+         fifa17$Pos2[temp$PlayerID] == "CM" | 
+         fifa17$Pos2[temp$PlayerID] == "LM" | 
+         fifa17$Pos2[temp$PlayerID] == "RM" | 
+         fifa17$Pos2[temp$PlayerID] == "CDM"){
+        #Recursively determine if the first available position
+        if(!is.na(clubs17$M3[i]) & is.na(clubs17$M4[i])){
+          clubs17$M4[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$M2[i]) & is.na(clubs17$M3[i])){
+          clubs17$M3[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$M1[i]) & is.na(clubs17$M2[i])){
+          clubs17$M2[i] <- temp$Rating
+          complete = 1
+        }
+        if(is.na(clubs17$M1[i])){
+          clubs17$M1[i] <- temp$Rating
+          complete = 1
+        }
+      }
+      #Find 4 best defenders (CB,LB,RB,LWB,RWB)
+      if(fifa17$Pos2[temp$PlayerID] == "CB" | 
+         fifa17$Pos2[temp$PlayerID] == "LB" | 
+         fifa17$Pos2[temp$PlayerID] == "RB" | 
+         fifa17$Pos2[temp$PlayerID] == "LWB" | 
+         fifa17$Pos2[temp$PlayerID] == "RWB"){
+        #Recursively determine if the first available position
+        if(!is.na(clubs17$D3[i]) & is.na(clubs17$D4[i])){
+          clubs17$D4[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$D2[i]) & is.na(clubs17$D3[i])){
+          clubs17$D3[i] <- temp$Rating
+          complete = 1
+        }
+        if(!is.na(clubs17$D1[i]) & is.na(clubs17$D2[i])){
+          clubs17$D2[i] <- temp$Rating
+          complete = 1
+        }
+        if(is.na(clubs17$D1[i])){
+          clubs17$D1[i] <- temp$Rating
+          complete = 1
+        }
+      }
+    }
+    
+    #If a player's 1st and 2nd preference is both full then add them to the bench
+    #If the bench is full then that player will not be included
+    
+    #Bench
+    if(complete == 0){
+      #Recursively determine if the first available position
+      if(!is.na(clubs17$B6[i]) & is.na(clubs17$B7[i])){
+        clubs17$B7[i] <- temp$Rating
+        complete = 1
+      }
+      if(!is.na(clubs17$B5[i]) & is.na(clubs17$B6[i])){
+        clubs17$B6[i] <- temp$Rating
+        complete = 1
+      }
+      if(!is.na(clubs17$B4[i]) & is.na(clubs17$B5[i])){
+        clubs17$B5[i] <- temp$Rating
+        complete = 1
+      }
+      if(!is.na(clubs17$B3[i]) & is.na(clubs17$B4[i])){
+        clubs17$B4[i] <- temp$Rating
+        complete = 1
+      }
+      if(!is.na(clubs17$B2[i]) & is.na(clubs17$B3[i])){
+        clubs17$B3[i] <- temp$Rating
+        complete = 1
+      }
+      if(!is.na(clubs17$B1[i]) & is.na(clubs17$B2[i])){
+        clubs17$B2[i] <- temp$Rating
+        complete = 1
+      }
+      if(is.na(clubs17$B1[i])){
+        clubs17$B1[i] <- temp$Rating
+        complete = 1
+      }
+    }
+    complete = 0
+  }
+}
+
+#Create average ranking for each position group
+clubs17$Goalkeeper <- clubs17$GK
+clubs17$Attacking <- rowMeans(clubs17[4:5], na.rm=TRUE)
+clubs17$Midfield <- rowMeans(clubs17[6:9], na.rm=TRUE)
+clubs17$Defense <- rowMeans(clubs17[10:13], na.rm=TRUE)
+clubs17$Bench <- rowMeans(clubs17[14:20], na.rm=TRUE)
+clubs17$Overall <- rowMeans(clubs17[3:13], na.rm=TRUE)
+
+#Create variables for league averages
+Ovr17 <- clubs17 %>%
+  group_by(Div) %>%
+  summarise(LGmeanOvr = mean(Overall), LGmeanAtt = mean(Attacking), LGmeanDef = mean(Defense))
+clubs17 <- merge(clubs17, Ovr17, by = "Div")
+clubs17 <- clubs17 %>%
+  mutate(OvrvsMean = Overall - LGmeanOvr, AttvsMean = Attacking - LGmeanAtt, DefvsMean = Defense - LGmeanDef)
+
+
+#Create team goals for, goals against, and goal differential variables
+results17 <- clubsmatches17
+results17$homeGF <- NA
+results17$awayGF <- NA
+results17$homeGA <- NA
+results17$awayGA <- NA
+results17$homeDiff <- NA
+results17$awayDiff <- NA
+results17$GF <- NA
+results17$GA <- NA
+results17$Diff <- NA
+
+x <- nrow(results17)
+matches17$HomeTeam <- as.character(matches17$HomeTeam)
+matches17$AwayTeam <- as.character(matches17$AwayTeam)
+for(i in c(1:x)){
+  temp <- matches17 %>%
+    filter(HomeTeam == results17$Club[i]) %>%
+    select(FTHG, FTAG)
+  results17$homeGF[i] <- mean(temp$FTHG)
+  results17$homeGA[i] <- mean(temp$FTAG)
+  temp <- matches17 %>%
+    filter(AwayTeam == results17$Club[i]) %>%
+    select(FTHG, FTAG)
+  results17$awayGF[i] <- mean(temp$FTAG)
+  results17$awayGA[i] <- mean(temp$FTHG)
+}
+
+results17$homeDiff <- results17$homeGF - results17$homeGA
+results17$awayDiff <- results17$awayGF - results17$awayGA
+results17$GF <- (results17$homeGF + results17$awayGF) / 2
+results17$GA <- (results17$homeGA + results17$awayGA) / 2
+results17$Diff <- results17$GF - results17$GA
+
+GF17 <- results17 %>%
+  group_by(Div) %>%
+  summarise(LGmeanGoals = mean(GF))
+results17 <- merge(results17, GF17, by = "Div")
+results17 <- results17 %>%
+  mutate(GFvsMean = GF - LGmeanGoals, GAvsMean = LGmeanGoals - GA)
+```
+
+
+```{r}
+#Load dataset
+fifa18 <- read.csv("./FIFA18.csv")
+#Convert special characters (accented letters from other languages) to simple english letters
+fifa18$Club <- chartr(paste(names(unwanted_array), collapse=''), paste(unwanted_array, collapse=''), fifa18$Club)
+
+
+#Pull all of the teams in fifa 18
+clubsfifa18 <- as.character(fifa18$Club)
+clubsfifa18 <- unique(clubsfifa18)
+clubsmatches18 <- as.character(matches18$HomeTeam)
+clubsmatches18 <- unique(clubsmatches18)
+same18 <- intersect(clubsfifa18,clubsmatches18)
+different18 <- setdiff(clubsmatches18,same18)
+
+
+#Save the vectors and process them
+write.csv(same18, "./same18.csv")
+write.csv(different18, "./diff18.csv")
+write.csv(clubsfifa18, "./clubs18.csv")
+
+#The team name conversion files that I made manually
+convert18 <- read.csv("./convert18.csv")
+
+
+#Convert the club names so that they are now the same as the club names in the matches dataset
+fifa18 <- merge(fifa18, convert18, by = "Club", all = T)
+fifa18 <- fifa18 %>%
+  select(-Club) %>%
+  rename(Club = "New")
+
+#Verify that there aren't any more mismatches between the two datasets
+clubsfifa18 <- as.character(fifa18$Club)
+clubsfifa18 <- unique(clubsfifa18)
+clubsmatches18 <- as.character(matches18$HomeTeam)
+clubsmatches18 <- unique(clubsmatches18)
+same18 <- intersect(clubsfifa18,clubsmatches18)
+different18 <- setdiff(clubsmatches18,same18)
+
+#Remove teams from the fifa dataset that do not appear in the matches dataset
+clubsmatches18 <- as.data.frame(clubsmatches18)
+clubsmatches18 <- rename(clubsmatches18, Club = "clubsmatches18")
+fifa18 <- inner_join(clubsmatches18, fifa18, by = "Club")
+leagues18 <- matches18 %>%
+  select(HomeTeam, Div) %>%
+  rename(Club = "HomeTeam")
+leagues18 <- unique(leagues18)
+clubsmatches18 <- merge(clubsmatches18, leagues18, by = "Club", all = T)
+
+
+
+#Change rating from factor to numeric
+fifa18$Overall < as.numeric(fifa18$Overall)
+#Split Preffered_Position into 4 columns and combine it with the Fifa 18 dataset
+q <- as.data.frame(str_split_fixed(fifa18$Preferred.Positions, " ", 4))
+q <- rename(q, Pos1 = "V1", Pos2 = "V2", Pos3 = "V3", Pos4 = "V4")
+fifa18 <- cbind(fifa18, q)
+fifa18$PlayerID <- c(1:nrow(fifa18))
+
+#Create all of the variables for each of the positions and rating aggregates for each team
+clubs18 <- clubsmatches18
+clubs18[,c(3:26)] <- NA
+clubs18 <- clubs18 %>%
+  rename(GK = "V3", F1 = "V4", F2 = "V5", M1 = "V6", M2 = "V7", M3 = "V8", M4 = "V9", D1 = "V10", D2 = "V11", D3 = "V12", D4 = "V13", B1 = "V14", B2 = "V15", B3 = "V16", B4 = "V17", B5 = "V18", B6 = "V19", B7 = "V20", Overall = "V21", Goalkeeper = "V22", Attacking = "V23", Midfield = "V24", Defense = "V25", Bench = "V26")
+
+#Sort all of the players into their respective positions for each team
+x <- nrow(clubs18)
+complete = 0
+for(i in c(1:x)){
+  y <- nrow(fifa18 %>%
+      filter(Club == clubs18$Club[i]))
+  for(j in c(1:y)){
+    temp <- fifa18 %>%
+      filter(Club == clubs18$Club[i]) %>%
+      arrange(desc(Overall)) %>%
+      select(Overall, PlayerID, Pos1, Pos2, Pos3, Pos4) %>%
+      slice(j)
+    
+    #Same process as before
+    
+    if(complete == 0){
+      if(fifa18$Pos1[temp$PlayerID] == "GK"){
+        if(is.na(clubs18$GK[i])){
+          clubs18$GK[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa18$Pos1[temp$PlayerID] == "ST" | 
+         fifa18$Pos1[temp$PlayerID] == "CF" | 
+         fifa18$Pos1[temp$PlayerID] == "LW" | 
+         fifa18$Pos1[temp$PlayerID] == "RW"){
+        if(!is.na(clubs18$F1[i]) & is.na(clubs18$F2[i])){
+          clubs18$F2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs18$F1[i])){
+          clubs18$F1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa18$Pos1[temp$PlayerID] == "CAM" | 
+         fifa18$Pos1[temp$PlayerID] == "CM" | 
+         fifa18$Pos1[temp$PlayerID] == "LM" | 
+         fifa18$Pos1[temp$PlayerID] == "RM" | 
+         fifa18$Pos1[temp$PlayerID] == "CDM"){
+        if(!is.na(clubs18$M3[i]) & is.na(clubs18$M4[i])){
+          clubs18$M4[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$M2[i]) & is.na(clubs18$M3[i])){
+          clubs18$M3[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$M1[i]) & is.na(clubs18$M2[i])){
+          clubs18$M2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs18$M1[i])){
+          clubs18$M1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa18$Pos1[temp$PlayerID] == "CB" | 
+         fifa18$Pos1[temp$PlayerID] == "LB" | 
+         fifa18$Pos1[temp$PlayerID] == "RB" | 
+         fifa18$Pos1[temp$PlayerID] == "LWB" | 
+         fifa18$Pos1[temp$PlayerID] == "RWB"){
+        if(!is.na(clubs18$D3[i]) & is.na(clubs18$D4[i])){
+          clubs18$D4[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$D2[i]) & is.na(clubs18$D3[i])){
+          clubs18$D3[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$D1[i]) & is.na(clubs18$D2[i])){
+          clubs18$D2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs18$D1[i])){
+          clubs18$D1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+    }
+    
+    if(complete == 0){
+      if(fifa18$Pos2[temp$PlayerID] == "GK"){
+        if(is.na(clubs18$GK[i])){
+          clubs18$GK[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa18$Pos2[temp$PlayerID] == "ST" | 
+         fifa18$Pos2[temp$PlayerID] == "CF" | 
+         fifa18$Pos2[temp$PlayerID] == "LW" | 
+         fifa18$Pos2[temp$PlayerID] == "RW" | 
+         fifa18$Pos2[temp$PlayerID] == "CAM"){
+        if(!is.na(clubs18$F1[i]) & is.na(clubs18$F2[i])){
+          clubs18$F2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs18$F1[i])){
+          clubs18$F1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa18$Pos2[temp$PlayerID] == "CAM" | 
+         fifa18$Pos2[temp$PlayerID] == "CM" | 
+         fifa18$Pos2[temp$PlayerID] == "LM" | 
+         fifa18$Pos2[temp$PlayerID] == "RM" | 
+         fifa18$Pos2[temp$PlayerID] == "CDM"){
+        if(!is.na(clubs18$M3[i]) & is.na(clubs18$M4[i])){
+          clubs18$M4[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$M2[i]) & is.na(clubs18$M3[i])){
+          clubs18$M3[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$M1[i]) & is.na(clubs18$M2[i])){
+          clubs18$M2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs18$M1[i])){
+          clubs18$M1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa18$Pos2[temp$PlayerID] == "CB" | 
+         fifa18$Pos2[temp$PlayerID] == "LB" | 
+         fifa18$Pos2[temp$PlayerID] == "RB" | 
+         fifa18$Pos2[temp$PlayerID] == "LWB" | 
+         fifa18$Pos2[temp$PlayerID] == "RWB"){
+        if(!is.na(clubs18$D3[i]) & is.na(clubs18$D4[i])){
+          clubs18$D4[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$D2[i]) & is.na(clubs18$D3[i])){
+          clubs18$D3[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs18$D1[i]) & is.na(clubs18$D2[i])){
+          clubs18$D2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs18$D1[i])){
+          clubs18$D1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+    }
+    
+    if(complete == 0){
+      if(!is.na(clubs18$B6[i]) & is.na(clubs18$B7[i])){
+        clubs18$B7[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs18$B5[i]) & is.na(clubs18$B6[i])){
+        clubs18$B6[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs18$B4[i]) & is.na(clubs18$B5[i])){
+        clubs18$B5[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs18$B3[i]) & is.na(clubs18$B4[i])){
+        clubs18$B4[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs18$B2[i]) & is.na(clubs18$B3[i])){
+        clubs18$B3[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs18$B1[i]) & is.na(clubs18$B2[i])){
+        clubs18$B2[i] <- temp$Overall
+        complete = 1
+      }
+      if(is.na(clubs18$B1[i])){
+        clubs18$B1[i] <- temp$Overall
+        complete = 1
+      }
+    }
+    complete = 0
+  }
+}
+
+#Create average ranking for each position group
+clubs18$Goalkeeper <- clubs18$GK
+clubs18$Attacking <- rowMeans(clubs18[4:5], na.rm=TRUE)
+clubs18$Midfield <- rowMeans(clubs18[6:9], na.rm=TRUE)
+clubs18$Defense <- rowMeans(clubs18[10:13], na.rm=TRUE)
+clubs18$Bench <- rowMeans(clubs18[14:20], na.rm=TRUE)
+clubs18$Overall <- rowMeans(clubs18[3:13], na.rm=TRUE)
+
+#Create variables for league averages
+Ovr18 <- clubs18 %>%
+  group_by(Div) %>%
+  summarise(LGmeanOvr = mean(Overall), LGmeanAtt = mean(Attacking), LGmeanDef = mean(Defense))
+clubs18 <- merge(clubs18, Ovr18, by = "Div")
+clubs18 <- clubs18 %>%
+  mutate(OvrvsMean = Overall - LGmeanOvr, AttvsMean = Attacking - LGmeanAtt, DefvsMean = Defense - LGmeanDef)
+
+
+#Create team goals for, goals against, and goal differential variables
+results18 <- clubsmatches18
+results18$homeGF <- NA
+results18$awayGF <- NA
+results18$homeGA <- NA
+results18$awayGA <- NA
+results18$homeDiff <- NA
+results18$awayDiff <- NA
+results18$GF <- NA
+results18$GA <- NA
+results18$Diff <- NA
+
+x <- nrow(results18)
+matches18$HomeTeam <- as.character(matches18$HomeTeam)
+matches18$AwayTeam <- as.character(matches18$AwayTeam)
+for(i in c(1:x)){
+  temp <- matches18 %>%
+    filter(HomeTeam == results18$Club[i]) %>%
+    select(FTHG, FTAG)
+  results18$homeGF[i] <- mean(temp$FTHG)
+  results18$homeGA[i] <- mean(temp$FTAG)
+  temp <- matches18 %>%
+    filter(AwayTeam == results18$Club[i]) %>%
+    select(FTHG, FTAG)
+  results18$awayGF[i] <- mean(temp$FTAG)
+  results18$awayGA[i] <- mean(temp$FTHG)
+}
+
+results18$homeDiff <- results18$homeGF - results18$homeGA
+results18$awayDiff <- results18$awayGF - results18$awayGA
+results18$GF <- (results18$homeGF + results18$awayGF) / 2
+results18$GA <- (results18$homeGA + results18$awayGA) / 2
+results18$Diff <- results18$GF - results18$GA
+
+GF18 <- results18 %>%
+  group_by(Div) %>%
+  summarise(LGmeanGoals = mean(GF))
+results18 <- merge(results18, GF18, by = "Div")
+results18 <- results18 %>%
+  mutate(GFvsMean = GF - LGmeanGoals, GAvsMean = LGmeanGoals - GA)
+```
+
+
+```{r}
+#Load the datasets
+fifa19 <- read.csv("./FIFA19.csv")
+#Convert special characters (accented letters from other languages) to simple english letters
+fifa19$Club <- chartr(paste(names(unwanted_array), collapse=''), paste(unwanted_array, collapse=''), fifa19$Club)
+
+
+#Pull all of the teams in fifa 19
+clubsfifa19 <- as.character(fifa19$Club)
+clubsfifa19 <- unique(clubsfifa19)
+clubsmatches19 <- as.character(matches19$HomeTeam)
+clubsmatches19 <- unique(clubsmatches19)
+same19 <- intersect(clubsfifa19,clubsmatches19)
+different19 <- setdiff(clubsmatches19,same19)
+
+
+#Save the vectors and process them
+write.csv(same19, "./same19.csv")
+write.csv(different19, "./diff19.csv")
+write.csv(clubsfifa19, "./clubs19.csv")
+
+#The team name conversion files that I made manually
+convert19 <- read.csv("./convert19.csv")
+
+
+#Convert the club names so that they are now the same as the club names in the matches dataset
+fifa19 <- merge(fifa19, convert19, by = "Club", all = T)
+fifa19 <- fifa19 %>%
+  select(-Club) %>%
+  rename(Club = "New")
+
+#Verify that there aren't any more mismatches between the two datasets
+clubsfifa19 <- as.character(fifa19$Club)
+clubsfifa19 <- unique(clubsfifa19)
+clubsmatches19 <- as.character(matches19$HomeTeam)
+clubsmatches19 <- unique(clubsmatches19)
+same19 <- intersect(clubsfifa19,clubsmatches19)
+different19 <- setdiff(clubsmatches19,same19)
+
+#Remove teams from the fifa dataset that do not appear in the matches dataset
+clubsmatches19 <- as.data.frame(clubsmatches19)
+clubsmatches19 <- rename(clubsmatches19, Club = "clubsmatches19")
+fifa19 <- inner_join(clubsmatches19, fifa19, by = "Club")
+leagues19 <- matches19 %>%
+  select(HomeTeam, Div) %>%
+  rename(Club = "HomeTeam")
+leagues19 <- unique(leagues19)
+clubsmatches19 <- merge(clubsmatches19, leagues19, by = "Club", all = T)
+
+
+
+#Change rating from factor to numeric
+fifa19$Overall < as.numeric(fifa19$Overall)
+#No position spliting since there is only 1 position per player in this dataset
+fifa19$PlayerID <- c(1:nrow(fifa19))
+
+#Create all of the variables for each of the positions and rating aggregates for each team
+clubs19 <- clubsmatches19
+clubs19[,c(3:26)] <- NA
+clubs19 <- clubs19 %>%
+  rename(GK = "V3", F1 = "V4", F2 = "V5", M1 = "V6", M2 = "V7", M3 = "V8", M4 = "V9", D1 = "V10", D2 = "V11", D3 = "V12", D4 = "V13", B1 = "V14", B2 = "V15", B3 = "V16", B4 = "V17", B5 = "V18", B6 = "V19", B7 = "V20", Overall = "V21", Goalkeeper = "V22", Attacking = "V23", Midfield = "V24", Defense = "V25", Bench = "V26")
+
+x <- nrow(clubs19)
+complete = 0
+for(i in c(1:x)){
+  y <- nrow(fifa19 %>%
+      filter(Club == clubs19$Club[i]))
+  for(j in c(1:y)){
+    temp <- fifa19 %>%
+      filter(Club == clubs19$Club[i]) %>%
+      arrange(desc(Overall)) %>%
+      select(Overall, PlayerID, Position) %>%
+      slice(j)
+    
+    #Same process as before, except there is no 2nd preferred position
+    #Additionally there are a bunch of more detailed positions added in this Fifa dataset
+    
+    if(complete == 0){
+      if(fifa19$Position[temp$PlayerID] == "GK"){
+        if(is.na(clubs19$GK[i])){
+          clubs19$GK[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa19$Position[temp$PlayerID] == "ST" | 
+         fifa19$Position[temp$PlayerID] == "LS" | 
+         fifa19$Position[temp$PlayerID] == "RS" | 
+         fifa19$Position[temp$PlayerID] == "CF" | 
+         fifa19$Position[temp$PlayerID] == "LF" | 
+         fifa19$Position[temp$PlayerID] == "RF" | 
+         fifa19$Position[temp$PlayerID] == "LW" | 
+         fifa19$Position[temp$PlayerID] == "RW" | 
+         fifa19$Position[temp$PlayerID] == "CAM" | 
+         fifa19$Position[temp$PlayerID] == "LAM" | 
+         fifa19$Position[temp$PlayerID] == "RAM"){
+        if(!is.na(clubs19$F1[i]) & is.na(clubs19$F2[i])){
+          clubs19$F2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs19$F1[i])){
+          clubs19$F1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa19$Position[temp$PlayerID] == "CAM" | 
+         fifa19$Position[temp$PlayerID] == "LAM" | 
+         fifa19$Position[temp$PlayerID] == "RAM" | 
+         fifa19$Position[temp$PlayerID] == "CM" | 
+         fifa19$Position[temp$PlayerID] == "LM" | 
+         fifa19$Position[temp$PlayerID] == "RM" | 
+         fifa19$Position[temp$PlayerID] == "LCM" | 
+         fifa19$Position[temp$PlayerID] == "RCM" | 
+         fifa19$Position[temp$PlayerID] == "CDM" | 
+         fifa19$Position[temp$PlayerID] == "LDM" | 
+         fifa19$Position[temp$PlayerID] == "RDM"){
+        if(!is.na(clubs19$M3[i]) & is.na(clubs19$M4[i])){
+          clubs19$M4[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs19$M2[i]) & is.na(clubs19$M3[i])){
+          clubs19$M3[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs19$M1[i]) & is.na(clubs19$M2[i])){
+          clubs19$M2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs19$M1[i])){
+          clubs19$M1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(fifa19$Position[temp$PlayerID] == "CB" | 
+         fifa19$Position[temp$PlayerID] == "LB" | 
+         fifa19$Position[temp$PlayerID] == "RB" | 
+         fifa19$Position[temp$PlayerID] == "LCB" | 
+         fifa19$Position[temp$PlayerID] == "RCB" | 
+         fifa19$Position[temp$PlayerID] == "LWB" | 
+         fifa19$Position[temp$PlayerID] == "RWB"){
+        if(!is.na(clubs19$D3[i]) & is.na(clubs19$D4[i])){
+          clubs19$D4[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs19$D2[i]) & is.na(clubs19$D3[i])){
+          clubs19$D3[i] <- temp$Overall
+          complete = 1
+        }
+        if(!is.na(clubs19$D1[i]) & is.na(clubs19$D2[i])){
+          clubs19$D2[i] <- temp$Overall
+          complete = 1
+        }
+        if(is.na(clubs19$D1[i])){
+          clubs19$D1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+      if(complete == 0){
+        if(is.na(clubs19$B1[i])){
+          clubs19$B1[i] <- temp$Overall
+          complete = 1
+        }
+      }
+    }
+    
+    if(complete == 0){
+      if(!is.na(clubs19$B6[i]) & is.na(clubs19$B7[i])){
+        clubs19$B7[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs19$B5[i]) & is.na(clubs19$B6[i])){
+        clubs19$B6[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs19$B4[i]) & is.na(clubs19$B5[i])){
+        clubs19$B5[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs19$B3[i]) & is.na(clubs19$B4[i])){
+        clubs19$B4[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs19$B2[i]) & is.na(clubs19$B3[i])){
+        clubs19$B3[i] <- temp$Overall
+        complete = 1
+      }
+      if(!is.na(clubs19$B1[i]) & is.na(clubs19$B2[i])){
+        clubs19$B2[i] <- temp$Overall
+        complete = 1
+      }
+      if(is.na(clubs19$B1[i])){
+        clubs19$B1[i] <- temp$Overall
+        complete = 1
+      }
+    }
+    complete = 0
+  }
+}
+
+#Create average ranking for each position group
+clubs19$Goalkeeper <- clubs19$GK
+clubs19$Attacking <- rowMeans(clubs19[4:5], na.rm=TRUE)
+clubs19$Midfield <- rowMeans(clubs19[6:9], na.rm=TRUE)
+clubs19$Defense <- rowMeans(clubs19[10:13], na.rm=TRUE)
+clubs19$Bench <- rowMeans(clubs19[14:20], na.rm=TRUE)
+clubs19$Overall <- rowMeans(clubs19[3:13], na.rm=TRUE)
+
+#Create variables for league averages
+Ovr19 <- clubs19 %>%
+  group_by(Div) %>%
+  summarise(LGmeanOvr = mean(Overall), LGmeanAtt = mean(Attacking), LGmeanDef = mean(Defense))
+clubs19 <- merge(clubs19, Ovr19, by = "Div")
+clubs19 <- clubs19 %>%
+  mutate(OvrvsMean = Overall - LGmeanOvr, AttvsMean = Attacking - LGmeanAtt, DefvsMean = Defense - LGmeanDef)
+
+
+#Create team goals for, goals against, and goal differential variables
+results19 <- clubsmatches19
+results19$homeGF <- NA
+results19$awayGF <- NA
+results19$homeGA <- NA
+results19$awayGA <- NA
+results19$homeDiff <- NA
+results19$awayDiff <- NA
+results19$GF <- NA
+results19$GA <- NA
+results19$Diff <- NA
+
+x <- nrow(results19)
+matches19$HomeTeam <- as.character(matches19$HomeTeam)
+matches19$AwayTeam <- as.character(matches19$AwayTeam)
+for(i in c(1:x)){
+  temp <- matches19 %>%
+    filter(HomeTeam == results19$Club[i]) %>%
+    select(FTHG, FTAG)
+  results19$homeGF[i] <- mean(temp$FTHG)
+  results19$homeGA[i] <- mean(temp$FTAG)
+  temp <- matches19 %>%
+    filter(AwayTeam == results19$Club[i]) %>%
+    select(FTHG, FTAG)
+  results19$awayGF[i] <- mean(temp$FTAG)
+  results19$awayGA[i] <- mean(temp$FTHG)
+}
+
+results19$homeDiff <- results19$homeGF - results19$homeGA
+results19$awayDiff <- results19$awayGF - results19$awayGA
+results19$GF <- (results19$homeGF + results19$awayGF) / 2
+results19$GA <- (results19$homeGA + results19$awayGA) / 2
+results19$Diff <- results19$GF - results19$GA
+
+GF19 <- results19 %>%
+  group_by(Div) %>%
+  summarise(LGmeanGoals = mean(GF))
+results19 <- merge(results19, GF19, by = "Div")
+results19 <- results19 %>%
+  mutate(GFvsMean = GF - LGmeanGoals, GAvsMean = LGmeanGoals - GA)
+```
+
+
+```{r}
+#Merge the club data together with the results data first by year and then merge all 3 together
+#This dataset has all club position ratings, team ratings, league ratings, goal averages, and 
+#averages vs means
+all17 <- merge(clubs17, results17, by = c("Club", "Div"), all = T)
+all17$year <- "2017"
+all18 <- merge(clubs18, results18, by = c("Club", "Div"), all = T)
+all18$year <- "2018"
+all19 <- merge(clubs19, results19, by = c("Club", "Div"), all = T)
+all19$year <- "2019"
+all <- rbind(all17, all18, all19)
+write.csv(all, "./all.csv")
+```
+
+
+```{r}
+#Create dataset for all the individual games first by year and then merge all 3 together
+#This dataset has all games, teams, results, and team ratings
+u17 <- select(matches17, X, Season, Date, Div, Country, League, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HS, AS, HST, AST)
+v17 <- select(clubs17, Club, Overall, Goalkeeper, Attacking, Midfield, Defense, Bench)
+#-c(LGmeanOvr, LGmeanAtt, LGmeanDef, OvrvsMean, AttvsMean, DefvsMean)
+w17 <- merge(u17, v17, by.x = "HomeTeam", by.y = "Club")
+w17 <- rename(w17, HomeOverall = "Overall", HomeGoalkeeper = "Goalkeeper", HomeAttacking = "Attacking", HomeMidfield = "Midfield", HomeDefense = "Defense", HomeBench = "Bench")
+w17 <- merge(w17, v17, by.x = "AwayTeam", by.y = "Club")
+w17 <- rename(w17, AwayOverall = "Overall", AwayGoalkeeper = "Goalkeeper", AwayAttacking = "Attacking", AwayMidfield = "Midfield", AwayDefense = "Defense", AwayBench = "Bench")
+
+u18 <- select(matches18, X, Season, Date, Div, Country, League, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HS, AS, HST, AST)
+v18 <- select(clubs18, Club, Overall, Goalkeeper, Attacking, Midfield, Defense, Bench)
+#-c(LGmeanOvr, LGmeanAtt, LGmeanDef, OvrvsMean, AttvsMean, DefvsMean)
+w18 <- merge(u18, v18, by.x = "HomeTeam", by.y = "Club")
+w18 <- rename(w18, HomeOverall = "Overall", HomeGoalkeeper = "Goalkeeper", HomeAttacking = "Attacking", HomeMidfield = "Midfield", HomeDefense = "Defense", HomeBench = "Bench")
+w18 <- merge(w18, v18, by.x = "AwayTeam", by.y = "Club")
+w18 <- rename(w18, AwayOverall = "Overall", AwayGoalkeeper = "Goalkeeper", AwayAttacking = "Attacking", AwayMidfield = "Midfield", AwayDefense = "Defense", AwayBench = "Bench")
+
+u19 <- select(matches19, X, Season, Date, Div, Country, League, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HS, AS, HST, AST)
+v19 <- select(clubs19, Club, Overall, Goalkeeper, Attacking, Midfield, Defense, Bench)
+#-c(LGmeanOvr, LGmeanAtt, LGmeanDef, OvrvsMean, AttvsMean, DefvsMean)
+w19 <- merge(u19, v19, by.x = "HomeTeam", by.y = "Club")
+w19 <- rename(w19, HomeOverall = "Overall", HomeGoalkeeper = "Goalkeeper", HomeAttacking = "Attacking", HomeMidfield = "Midfield", HomeDefense = "Defense", HomeBench = "Bench")
+w19 <- merge(w19, v19, by.x = "AwayTeam", by.y = "Club")
+w19 <- rename(w19, AwayOverall = "Overall", AwayGoalkeeper = "Goalkeeper", AwayAttacking = "Attacking", AwayMidfield = "Midfield", AwayDefense = "Defense", AwayBench = "Bench")
+
+games <- rbind(w17,w18,w19)
+games <- games[c(3:8,2,1,9:27)]
+games <- arrange(games,X)
+games$GoalDiff <- games$FTHG - games$FTAG
+games$TotalGoals <- games$FTHG + games$FTAG
+write.csv(games, "./games.csv")
+```
+
+I tried creating a rest variable based on days between games but did not find any correlation so it is not used
+```{r}
+# #games$HomeShotPct <- games$FTHG/games$HST
+# #games <- filter(games, !is.na(HomeShotPct), !is.infinite(HomeShotPct))
+# #summary(lm(HomeShotPct ~ HomeAttacking + AwayGoalkeeper, games))
+# 
+# #Creating variables for days since last game
+# clubs <- as.character(games$HomeTeam)
+# clubs <- unique(clubs)
+# clubs <- as.data.frame(clubs)
+# 
+# games$Date <- as.Date(games$Date)
+# games$HomeRest <- NA
+# games$AwayRest <- NA
+# 
+# for(i in c(1:nrow(clubs))){
+#   temp <- filter(games, HomeTeam == clubs$clubs[i] | AwayTeam == clubs$clubs[i])
+#   for(j in c(1:nrow(temp))){
+#     if(temp$HomeTeam[j] == clubs$clubs[i]){
+#       num <- temp$X.1[j]
+#       games$HomeRest[num] <- temp$Date[j] - temp$Date[j+1]
+#     }
+#     if(temp$AwayTeam[j] == clubs$clubs[i]){
+#       num <- temp$X.1[j]
+#       games$AwayRest[num] <- temp$Date[j] - temp$Date[j+1]
+#     }
+#   }
+# }
+# games$RestDiff <- games$HomeRest - games$AwayRest
+# #Temporarily adjusting for some of the large rest periods to avoid the huge outliers at the beginning of the season and recently promoted teams
+# for(i in c(1:nrow(games))){
+#   if(is.na(games$HomeRest[i])){
+#     games$HomeRest[i] <- 21
+#   }
+#   if(is.na(games$AwayRest[i])){
+#     games$AwayRest[i] <- 21
+#   }
+#   if(games$HomeRest[i] > 21){
+#     games$HomeRest[i] <- 21
+#   }
+#   if(games$AwayRest[i] > 21){
+#     games$AwayRest[i] <- 21
+#   }
+#   if(!is.na(games$RestDiff[i])){
+#     if(games$RestDiff[i] < -14){
+#       games$RestDiff[i] <- -14
+#     }
+#     if(games$RestDiff[i] > 14){
+#       games$RestDiff[i] <- 14
+#     }
+#   }
+# }
+# 
+# write.csv(games, "./games.csv")
+```
+
+
+
+
+
+
+
+
+
+```{r}
+# #Starting on the process of finding top players each position
+# clubs17 <- clubsmatches17
+# clubs17$GK <- NA
+# clubs17$F1 <- NA
+# clubs17$F2 <- NA
+# clubs17$M1 <- NA
+# clubs17$M2 <- NA
+# clubs17$M3 <- NA
+# clubs17$M4 <- NA
+# clubs17$D1 <- NA
+# clubs17$D2 <- NA
+# clubs17$D3 <- NA
+# clubs17$D4 <- NA
+# 
+# fifa17$Rating < as.numeric(fifa17$Rating)
+# fifa17$PlayerID <- c(1:nrow(fifa17))
+# fifa17$Used <- ""
+# 
+# x <- nrow(clubs17)
+# for(i in c(1:x)){
+#   temp <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "GK") %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating, PlayerID) %>%
+#     slice(1)
+#   clubs17[i,2] <- temp$Rating
+#   fifa17$Used[temp$PlayerID] <- "Yes"
+# }
+# for(i in c(1:x)){
+#   temp <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Used != "Yes") %>%
+#     filter(Preffered_Position == "ST" | str_detect(Preffered_Position, "ST/") == TRUE |
+#              Preffered_Position == "CF" | str_detect(Preffered_Position, "CF/") == TRUE |
+#              Preffered_Position == "LW" | str_detect(Preffered_Position, "LW/") == TRUE |
+#              Preffered_Position == "RW" | str_detect(Preffered_Position, "RW/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating, PlayerID) %>%
+#     slice(1)
+#   clubs17[i,3] <- temp$Rating
+#   fifa17$Used[temp$PlayerID] <- "Yes"
+# }
+# for(i in c(1:x)){
+#   temp <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Used != "Yes") %>%
+#     filter(Preffered_Position == "ST" | str_detect(Preffered_Position, "ST/") == TRUE |
+#              Preffered_Position == "CF" | str_detect(Preffered_Position, "CF/") == TRUE |
+#              Preffered_Position == "LW" | str_detect(Preffered_Position, "LW/") == TRUE |
+#              Preffered_Position == "RW" | str_detect(Preffered_Position, "RW/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating, PlayerID)
+#   if(nrow(temp) > 0){
+#     clubs17[i,4] <- slice(temp, 1)
+#     fifa17$Used[temp$PlayerID] <- "Yes"
+#   }
+#   if(nrow(temp) < 1){
+#     clubs17[i,4] <- fifa17 %>%
+#       filter(Club == clubsmatches17[i,]) %>%
+#       filter(Used != "Yes") %>%
+#       filter(str_detect(Preffered_Position, "ST") == TRUE |
+#               str_detect(Preffered_Position, "CF") == TRUE |
+#               str_detect(Preffered_Position, "LW") == TRUE |
+#               str_detect(Preffered_Position, "RW") == TRUE |
+#               str_detect(Preffered_Position, "/CAM") == TRUE) %>%
+#       arrange(desc(Rating)) %>%
+#       select(Rating, PlayerID) %>%
+#       slice(1)
+#     clubs17[i,4] <- temp$Rating
+#     fifa17$Used[temp$PlayerID] <- "Yes"
+#   }
+#   
+#   if(clubs17$F1[i] - clubs17$F2[i] > 10){
+#     fifa17$Used[temp$PlayerID] <- ""
+#     clubs17[i,4] <- fifa17 %>%
+#       filter(Club == clubsmatches17[i,]) %>%
+#       filter(Used != "Yes") %>%
+#       filter(str_detect(Preffered_Position, "ST") == TRUE |
+#               str_detect(Preffered_Position, "CF") == TRUE |
+#               str_detect(Preffered_Position, "LW") == TRUE |
+#               str_detect(Preffered_Position, "RW") == TRUE |
+#               str_detect(Preffered_Position, "/CAM") == TRUE) %>%
+#       arrange(desc(Rating)) %>%
+#       select(Rating, PlayerID) %>%
+#       slice(1)
+#     clubs17[i,4] <- temp$Rating
+#     fifa17$Used[temp$PlayerID] <- "Yes"
+#   }
+# }
+# for(i in c(1:x)){
+#   clubs17[i,5] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CAM" | str_detect(Preffered_Position, "CAM/") == TRUE |
+#              Preffered_Position == "CM" | str_detect(Preffered_Position, "CM/") == TRUE |
+#              Preffered_Position == "LM" | str_detect(Preffered_Position, "LM/") == TRUE |
+#              Preffered_Position == "RM" | str_detect(Preffered_Position, "RM/") == TRUE |
+#              Preffered_Position == "CDM" | str_detect(Preffered_Position, "CDM/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(1)
+# }
+# for(i in c(1:x)){
+#   clubs17[i,6] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CAM" | str_detect(Preffered_Position, "CAM/") == TRUE |
+#              Preffered_Position == "CM" | str_detect(Preffered_Position, "CM/") == TRUE |
+#              Preffered_Position == "LM" | str_detect(Preffered_Position, "LM/") == TRUE |
+#              Preffered_Position == "RM" | str_detect(Preffered_Position, "RM/") == TRUE |
+#              Preffered_Position == "CDM" | str_detect(Preffered_Position, "CDM/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(2)
+# }
+# for(i in c(1:x)){
+#   clubs17[i,7] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CAM" | str_detect(Preffered_Position, "CAM/") == TRUE |
+#              Preffered_Position == "CM" | str_detect(Preffered_Position, "CM/") == TRUE |
+#              Preffered_Position == "LM" | str_detect(Preffered_Position, "LM/") == TRUE |
+#              Preffered_Position == "RM" | str_detect(Preffered_Position, "RM/") == TRUE |
+#              Preffered_Position == "CDM" | str_detect(Preffered_Position, "CDM/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(3)
+# }
+# for(i in c(1:x)){
+#   clubs17[i,8] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CAM" | str_detect(Preffered_Position, "CAM/") == TRUE |
+#              Preffered_Position == "CM" | str_detect(Preffered_Position, "CM/") == TRUE |
+#              Preffered_Position == "LM" | str_detect(Preffered_Position, "LM/") == TRUE |
+#              Preffered_Position == "RM" | str_detect(Preffered_Position, "RM/") == TRUE |
+#              Preffered_Position == "CDM" | str_detect(Preffered_Position, "CDM/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(4)
+# }
+# for(i in c(1:x)){
+#   clubs17[i,9] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CB" | str_detect(Preffered_Position, "CB/") == TRUE |
+#              Preffered_Position == "LB" | str_detect(Preffered_Position, "LB/") == TRUE |
+#              Preffered_Position == "RB" | str_detect(Preffered_Position, "RB/") == TRUE |
+#              Preffered_Position == "LWB" | str_detect(Preffered_Position, "LWB/") == TRUE |
+#              Preffered_Position == "RWB" | str_detect(Preffered_Position, "RWB/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(1)
+# }
+# for(i in c(1:x)){
+#   clubs17[i,10] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CB" | str_detect(Preffered_Position, "CB/") == TRUE |
+#              Preffered_Position == "LB" | str_detect(Preffered_Position, "LB/") == TRUE |
+#              Preffered_Position == "RB" | str_detect(Preffered_Position, "RB/") == TRUE |
+#              Preffered_Position == "LWB" | str_detect(Preffered_Position, "LWB/") == TRUE |
+#              Preffered_Position == "RWB" | str_detect(Preffered_Position, "RWB/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(2)
+# }
+# for(i in c(1:x)){
+#   clubs17[i,11] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CB" | str_detect(Preffered_Position, "CB/") == TRUE |
+#              Preffered_Position == "LB" | str_detect(Preffered_Position, "LB/") == TRUE |
+#              Preffered_Position == "RB" | str_detect(Preffered_Position, "RB/") == TRUE |
+#              Preffered_Position == "LWB" | str_detect(Preffered_Position, "LWB/") == TRUE |
+#              Preffered_Position == "RWB" | str_detect(Preffered_Position, "RWB/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(3)
+# }
+# for(i in c(1:x)){
+#   clubs17[i,12] <- fifa17 %>%
+#     filter(Club == clubsmatches17[i,]) %>%
+#     filter(Preffered_Position == "CB" | str_detect(Preffered_Position, "CB/") == TRUE |
+#              Preffered_Position == "LB" | str_detect(Preffered_Position, "LB/") == TRUE |
+#              Preffered_Position == "RB" | str_detect(Preffered_Position, "RB/") == TRUE |
+#              Preffered_Position == "LWB" | str_detect(Preffered_Position, "LWB/") == TRUE |
+#              Preffered_Position == "RWB" | str_detect(Preffered_Position, "RWB/") == TRUE) %>%
+#     arrange(desc(Rating)) %>%
+#     select(Rating) %>%
+#     slice(4)
+# }
+```
+
+
+
+
+
+
+
+
+
+
+
