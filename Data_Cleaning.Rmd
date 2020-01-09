@@ -1,22 +1,3 @@
-Load the sqlite file
-```{r}
-#One of the datasets was a sqlite file so I needed to load that into R using the RSQLite package
-library("RSQLite")
-
-con <- dbConnect(drv=RSQLite::SQLite(), dbname="./database.sqlite")
-tables <- dbListTables(con)
-tables <- tables[tables != "sqlite_sequence"]
-lDataFrames <- vector("list", length=length(tables))
-
-for (i in seq(along=tables)) {
-  lDataFrames[[i]] <- dbGetQuery(conn=con, statement=paste("SELECT * FROM '", tables[[i]], "'", sep=""))
-}
-
-#Save the results dataset (the second dataset)
-write.csv(lDataFrames[[2]], "./match_results.csv")
-
-```
-
 Remove teams that won't be used and clean the team names
 ```{r}
 library(dplyr)
