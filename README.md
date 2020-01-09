@@ -8,6 +8,8 @@ Sports analytics has boomed in recent years with the explosion in available data
 
 This is the project I submitted for my senior capstone at Case Western Reserve University. I got all of the data from open sourced Fifa and soccer match data sets found on Kaggle. The entire project was done using R code and a little bit of Excel.
 
+You should be able to run the whole project in rStudio. Make sure you have the following packages installed (install.packages("Package Name")) in rStudio: dplyr, ggplot2, jtools, leaps, e1071. Run the Data_Cleaning.rmd code first and followed by Predicting_European_Soccer_Matches.rmd
+
 -------------------------
 
 Predicting_European_Soccer_Matches.pdf is the knitted final pdf report. It includes the background, methodology, and results of the project
