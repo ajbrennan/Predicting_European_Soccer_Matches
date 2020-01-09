@@ -10,6 +10,8 @@ This is the project I submitted for my senior capstone at Case Western Reserve U
 
 You should be able to run the whole project in rStudio. Make sure you have the following packages installed (install.packages("Package Name")) in rStudio: dplyr, ggplot2, jtools, leaps, e1071. Run the Data_Cleaning.rmd code first and followed by Predicting_European_Soccer_Matches.rmd
 
+My long term goal for this project now that I'm finished with school is to turn it into a prediction model for current and future games or to use it as a guide to create models for basketball and football. This way it can be used for predicting sports betting lines (which is why I predicted goal differential and win probabilities in the first place).
+
 -------------------------
 
 Predicting_European_Soccer_Matches.pdf is the knitted final pdf report. It includes the background, methodology, and results of the project
