@@ -10,4 +10,4 @@ Predicting_European_Soccer_Matches.pdf is the knitted final pdf report. It inclu
 
 Predicting_European_Soccer_Matches.rmd is the r code for the report.
 
-Data_Cleaning
+Data_Cleaning.rmd is the file where I did the majority of my data cleaning and processing.
