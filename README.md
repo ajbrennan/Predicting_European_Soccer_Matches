@@ -6,4 +6,8 @@ Sports analytics has boomed in recent years with the explosion in available data
 
 This is the project I submitted for my senior capstone at Case Western Reserve University.
 
-Predicting_European_Soccer_Matches.pdf is the final pdf report 
+Predicting_European_Soccer_Matches.pdf is the knitted final pdf report. It includes the background, methodology, and results of the project
+
+Predicting_European_Soccer_Matches.rmd is the r code for the report.
+
+Data_Cleaning
