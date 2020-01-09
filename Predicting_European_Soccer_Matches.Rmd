@@ -51,9 +51,9 @@ library(jtools)
 library(leaps)
 library(e1071)
 #Datasets
-fifa17 <- read.csv("./FullData_2017.csv")
-fifa18 <- read.csv("./fifa-18-demo-player-dataset/CompleteDataset.csv")
-fifa19 <- read.csv("./data_2019.csv")
+fifa17 <- read.csv("./FIFA17.csv")
+fifa18 <- read.csv("./FIFA18.csv")
+fifa19 <- read.csv("./FIFA19.csv")
 matches <- read.csv("./match_results.csv")
 all <- read.csv("./all.csv")
 games <- read.csv("./games.csv")
@@ -64,7 +64,7 @@ games <- rename(games, GameNum = "X.1")
 #str(matches)
 ```
 
-  I had to go through a few steps to take the raw data from Kaggle and format it into a format I could use for the project. All of the data cleaning and formating is done in the Data_Cleaning.rmd file. All 3 fifa video game data sets ("./Datasets/FullData_2017.csv", ".Datasets/fifa-18-demo-player-dataset/CompleteDataset.csv", "./Datasets/data_2019.csv") were in csv format, so they were loaded into R easily using read.csv. The data set with all of the match data, however, was in a SQLite file ("./Datasets/database.sqlite"). In order to load this file, I used the RSQLite package to pull the files from the database and then save the file I needed, which was the second data set. 
+  I had to go through a few steps to take the raw data from Kaggle and format it into a format I could use for the project. All of the data cleaning and formating is done in the Data_Cleaning.rmd file. All 3 fifa video game data sets ("./FIFA17.csv", "./FIFA18.csv", "./FIFA19.csv") were in csv format, so they were loaded into R easily using read.csv. The data set with all of the match data, however, was in a SQLite file ("./Datasets/database.sqlite"). In order to load this file, I used the RSQLite package to pull the files from the database and then save the file I needed, which was the second data set. 
 
   Since the soccer leagues in the Fifa games and match data are not the same, the next step was to filter for all the leagues that exist in all 4 data sets. This came out to a total of 17 european leagues in all of the data sets. These include: the top 4 tiers in England (Premier League, Championship, League 1, League 2); the top 2 tiers in Germany (Bundesliga 1, Bundesliga 2), France (Le Championnat, Division 2), Italy (Serie A, Serie B), and Spain (La Liga Primera Division, La Liga Segunda Division); and the top tier in Belgium (Jupiler League), Netherlands (Eredivisie), Portugal (Liga 1), Scotland (Premier League), and Turkey (Futbol Ligi 1). Using the dplyr package I removed all of the leagues that were not included in this list. I also created a conversion array in order to convert all of the special characters from other languages into simple English letters.
 
